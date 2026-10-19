@@ -54,11 +54,15 @@ public class PortfolioController {
             }
             return builder.body(p);
         } catch (BrokerClient.BrokerUpstreamException e) {
-            String kind = e.getKind();
-            boolean unauthorized = kind.contains("401") || "REFRESH_INVALID".equals(kind);
-            return ResponseEntity.status(unauthorized ? 401 : 502).body(new UnifiedError(
-                    unauthorized ? "UPSTREAM_UNAUTHORIZED" : "UPSTREAM_UNAVAILABLE",
-                    "Брокер вернул ошибку: " + kind, null));
+            // Трансляция реальной ошибки адаптера: 401 (токен невалиден/истёк),
+            // 429 (rate limit), 502 (недоступен). Раньше всё, кроме «401» в kind,
+            // превращалось в 502 с текстом "Брокер вернул ошибку: PORTFOLIO_FETCH_FAILED",
+            // и пользователь не мог отличить протухший токен от сбоя брокера.
+            int status = e.getHttpStatus();
+            String code = e.getKind();
+            String message = e.getMessage() == null || e.getMessage().isBlank()
+                    ? "Брокер вернул ошибку: " + code : e.getMessage();
+            return ResponseEntity.status(status).body(new UnifiedError(code, message, null));
         }
     }
 
