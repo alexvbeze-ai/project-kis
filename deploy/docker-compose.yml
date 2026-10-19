@@ -1,0 +1,28 @@
+# KIS MVP — весь стек одной командой:  docker compose up -d --build
+name: kis
+
+services:
+  web-client:                     # React+TS+Tailwind (nginx раздаёт статику + прокси /api)
+    build: ../apps/web-client
+    ports: ["8085:80"]
+    depends_on: [core-server]
+
+  core-server:                    # Ядро, Java Spring Boot (BFF/агрегатор)
+    build: ../apps/core-server
+    environment:
+      BCS_SERVER_URL: http://bcs-server:8081
+    ports: ["8080:8080"]
+    depends_on: [bcs-server]
+
+  bcs-server:                     # Адаптер БКС, Fastify+TS. Токены НЕ хранит (MVP-модель).
+    build: ../apps/bcs-server
+    environment:
+      NODE_ENV: production
+      PORT: "8081"
+      # DEMO-режим без реального БКС (подробнее в README.md):
+      #   KIS_MOCK_BCS=1 docker compose up -d --build
+      KIS_MOCK_BCS: ${KIS_MOCK_BCS:-0}
+    ports: ["8081"]               # только внутри сети compose
+    restart: unless-stopped
+
+  # v0.3: market-data (Go), postgres/timescaledb, logo-catalog
