@@ -141,6 +141,16 @@ Authorization: Bearer <access_token>   (заголовок при handshake)
 
 ### 3.2 Ответ: структура
 
+> ⚠️ **АКТУАЛЬНО (проверено по swagger на trade-api.bcs.ru/http/authorization):**
+> корень ответа — **голый JSON-массив позиций** `[ {...}, ... ]`, без обёртки
+> `{ positions: [...] }`. Поля переименованы: `currentUserValueRub/Usd/Eur` →
+> `currentValueRub/currentValueUsd/currentValueEur`; `subAccountId` и `agreementId`
+> помечены `deprecated`; `type` ∈ `moneyLimit | depoLimit | futuresLimit |
+> futuresHolding | otcLimit`; `upperType` ∈ `CURRENCY | RUSSIA | FOREIGN | OTC`.
+> Ошибки (429 и др.) — объект `{ timestamp, traceId, type, errors[], displayOptions }`.
+> Адаптер поддерживает оба формата (см. `normalizeBcsPortfolioResponse`). Ниже —
+> историческое описание из PDF.
+
 Корень ответа — объект с единственным контейнером:
 
 | Поле | Тип | Обязат. | Описание |

@@ -21,18 +21,21 @@ export function normalizePortfolio(raw: BcsPortfolioResponse): UnifiedPortfolio 
   const accounts = new Map<string, UnifiedAccount>();
 
   for (const p of raw.positions ?? []) {
+    // Новый контракт swagger: денежная позиция = type "moneyLimit" / upperType "CURRENCY".
     const isCash =
+      p.type?.toLowerCase() === "moneylimit" ||
+      p.upperType?.toUpperCase() === "CURRENCY" ||
       p.upperType?.toLowerCase() === CASH_TYPE ||
       p.instrumentType?.toLowerCase() === "cash" ||
       p.type?.toLowerCase() === CASH_TYPE ||
-      /^RUB$|^USD$|^EUR$|^CNY$/i.test(p.ticker ?? "") && p.quantity > 0 && !p.currentPrice;
+      (/^RUB$|^USD$|^EUR$|^CNY$/i.test(p.ticker ?? "") && (p.quantity ?? 0) > 0 && !p.currentPrice);
 
-    const accKey = `${p.agreementId}|${p.currency}`;
+    const accKey = `${p.agreementId ?? ""}|${p.account ?? ""}|${p.currency}`;
     if (!accounts.has(accKey)) {
       accounts.set(accKey, {
-        id: maskAccount(p.agreementId || p.account),
+        id: maskAccount(p.agreementId || p.account || ""),
         type: inferAccountType(p),
-        currency: p.currency,
+        currency: p.currency ?? "RUB",
         cash: 0,
         lockedCash: 0,
       });
@@ -40,21 +43,25 @@ export function normalizePortfolio(raw: BcsPortfolioResponse): UnifiedPortfolio 
     const acc = accounts.get(accKey)!;
 
     if (isCash) {
-      acc.cash += p.quantity * (p.currentPrice || 1); // для денег quantity часто = сумма
+      // moneyLimit: quantity — это сумма в валюте цены; currentPrice для денег может не быть.
+      acc.cash += (p.quantity ?? 0) * (p.currentPrice || 1);
       acc.lockedCash += p.locked ?? 0;
       continue;
     }
 
+    // Совместимость со старым (PDF) и новым (swagger) контрактами:
+    const marketValueRub = p.currentValueRub ?? p.currentUserValueRub ?? null;
+
     positions.push({
       instrumentId: toInstrumentId(p),
-      ticker: p.ticker,
-      displayName: p.displayName,
-      quantity: p.quantity,
+      ticker: p.ticker ?? "",
+      displayName: p.displayName ?? p.ticker ?? "",
+      quantity: p.quantity ?? 0,
       avgPrice: p.balancePrice ?? null,
-      price: p.currentPrice,
-      currency: p.currency,
-      marketValue: p.currentValue,
-      marketValueRub: p.currentUserValueRub ?? null,
+      price: p.currentPrice ?? 0,
+      currency: p.currency ?? "RUB",
+      marketValue: p.currentValue ?? 0,
+      marketValueRub,
       unrealizedPL: p.unrealizedPL ?? null,
       unrealizedPercentPL: p.unrealizedPercentPL ?? null,
       dailyPL: p.dailyPL ?? null,
@@ -68,7 +75,9 @@ export function normalizePortfolio(raw: BcsPortfolioResponse): UnifiedPortfolio 
     broker: "bcs",
     asOf: new Date().toISOString(),
     accounts: [...accounts.values()],
-    positions: positions.sort((a, b) => (b.marketValueRub ?? b.marketValue) - (a.marketValueRub ?? a.marketValue)),
+    positions: positions.sort(
+      (a, b) => (b.marketValueRub ?? b.marketValue) - (a.marketValueRub ?? a.marketValue),
+    ),
   };
 }
 

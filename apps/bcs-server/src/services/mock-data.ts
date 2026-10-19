@@ -115,7 +115,7 @@ export function mockBcsPortfolio(): BcsPortfolioResponse {
     cash(184_320.55, "12345678", "Б4567***1234"),
     cash(42_100.0, "IIS-7788", "ИИС 7788"),
   ];
-  const total = positions.reduce((s, p) => s + p.currentUserValueRub, 0);
-  for (const p of positions) p.portfolioShare = +((p.currentUserValueRub / total) * 100).toFixed(2);
+  const total = positions.reduce((s, p) => s + (p.currentUserValueRub ?? 0), 0);
+  for (const p of positions) p.portfolioShare = +(((p.currentUserValueRub ?? 0) / total) * 100).toFixed(2);
   return { positions };
 }

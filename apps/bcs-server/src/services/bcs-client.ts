@@ -4,7 +4,7 @@
  */
 import { request } from "undici";
 import { config } from "../config.js";
-import type { BcsPortfolioResponse } from "../types/bcs.js";
+import { normalizeBcsPortfolioResponse, type BcsPortfolioResponse } from "../types/bcs.js";
 import { UnifiedApiError } from "../types/unified.js";
 import { getAccessToken, invalidateAccessToken, type AccessResult } from "./keycloak.js";
 import { mockBcsPortfolio } from "./mock-data.js";
@@ -47,17 +47,35 @@ async function fetchPortfolioWithToken(accessToken: string): Promise<BcsPortfoli
     throw new UnifiedApiError(502, "UPSTREAM_UNAVAILABLE", `BCS API вернул ${res.statusCode}`);
   }
   if (res.statusCode !== 200) {
-    const text = await res.body.text();
+    // Тело ошибок БКС (UnifiedError: timestamp/traceId/type/errors[]) — в логи и в сообщение,
+    // чтобы диагностировать контрактные расхождения без гадания.
+    const text = await res.body.text().catch(() => "");
+    console.warn(`[bcs-api] portfolio HTTP ${res.statusCode}: ${text.slice(0, 500)}`);
     throw new UnifiedApiError(502, "UPSTREAM_UNAVAILABLE", `BCS API вернул ${res.statusCode}`, {
       body: text.slice(0, 500),
     });
   }
 
-  const json = (await res.body.json()) as BcsPortfolioResponse;
-  if (!Array.isArray(json.positions)) {
-    throw new UnifiedApiError(502, "UPSTREAM_UNAVAILABLE", "Неожиданная структура ответа BCS API");
+  const text = await res.body.text();
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    console.warn(`[bcs-api] portfolio 200, но не JSON: ${text.slice(0, 500)}`);
+    throw new UnifiedApiError(502, "UPSTREAM_UNAVAILABLE", "BCS API вернул не-JSON ответ", {
+      body: text.slice(0, 500),
+    });
   }
-  return json;
+  try {
+    // Новый контракт (swagger trade-api.bcs.ru): голый массив позиций.
+    // Старый (PDF/BCS-SPEC §3.2): { positions: [...] }. Поддерживаем оба.
+    return normalizeBcsPortfolioResponse(json);
+  } catch {
+    console.warn(`[bcs-api] portfolio 200, неожиданная структура: ${text.slice(0, 500)}`);
+    throw new UnifiedApiError(502, "UPSTREAM_UNAVAILABLE", "Неожиданная структура ответа BCS API", {
+      body: text.slice(0, 500),
+    });
+  }
 }
 
 export async function fetchPortfolio(refreshToken: string): Promise<PortfolioFetchResult> {
