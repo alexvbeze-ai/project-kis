@@ -19,6 +19,9 @@ services:
     environment:
       NODE_ENV: production
       PORT: "8081"
+      # DEMO-режим без реального БКС (подробнее в README.md):
+      #   KIS_MOCK_BCS=1 docker compose up -d --build
+      KIS_MOCK_BCS: ${KIS_MOCK_BCS:-0}
     ports: ["8081"]               # только внутри сети compose
     restart: unless-stopped
 

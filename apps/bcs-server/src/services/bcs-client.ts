@@ -7,11 +7,15 @@ import { config } from "../config.js";
 import type { BcsPortfolioResponse } from "../types/bcs.js";
 import { UnifiedApiError } from "../types/unified.js";
 import { getAccessToken, invalidateAccessToken, type AccessResult } from "./keycloak.js";
+import { mockBcsPortfolio } from "./mock-data.js";
 
 export interface PortfolioFetchResult {
   data: BcsPortfolioResponse;
   access: AccessResult;
 }
+
+/** DEMO-режим: KIS_MOCK_BCS=1 — любой непустой токен валиден, портфель фиктивный. */
+const MOCK_ACCESS: AccessResult = { accessToken: "mock", newRefreshToken: null, expiresIn: 300 };
 
 async function fetchPortfolioWithToken(accessToken: string): Promise<BcsPortfolioResponse> {
   let res;
@@ -57,6 +61,9 @@ async function fetchPortfolioWithToken(accessToken: string): Promise<BcsPortfoli
 }
 
 export async function fetchPortfolio(refreshToken: string): Promise<PortfolioFetchResult> {
+  if (config.mockBcs) {
+    return { data: mockBcsPortfolio(), access: MOCK_ACCESS };
+  }
   let access = await getAccessToken(refreshToken);
   try {
     const data = await fetchPortfolioWithToken(access.accessToken);

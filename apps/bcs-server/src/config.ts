@@ -22,4 +22,11 @@ export const config = {
 
   // CORS: кто может звать адаптер (в prod — только core-server из docker-сети)
   corsOrigin: (process.env.CORS_ORIGIN ?? "*").split(","),
+
+  /**
+   * DEMO-режим (KIS_MOCK_BCS=1): не ходить в реальный БКС, отдавать фиктивный
+   * портфель. Нужен, чтобы тестировать стек без брокерского токена.
+   * НИКОГДА не включать на публичном сервере.
+   */
+  mockBcs: process.env.KIS_MOCK_BCS === "1",
 };
