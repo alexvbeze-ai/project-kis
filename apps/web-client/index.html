@@ -4,8 +4,16 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>KIS — Кабинет инвестиционной стратегии</title>
+    <script>
+      // Анти-FOUC: тема (dark|light) применяется до загрузки React; дефолт — тёмная.
+      try {
+        if (localStorage.getItem("kis.theme") !== "light") {
+          document.documentElement.classList.add("dark");
+        }
+      } catch (e) {}
+    </script>
   </head>
-  <body class="bg-slate-950">
+  <body class="bg-slate-950 dark:bg-slate-950">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

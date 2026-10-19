@@ -16,7 +16,7 @@ public final class UnifiedModels {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record Position(
-            String instrumentId, String ticker, String displayName, String assetClass,
+            String instrumentId, String ticker, String displayName, String shortName, String assetClass,
             String instrumentType, double quantity,
             Double avgPrice, double price, String currency, double marketValue,
             Double marketValueRub, Double balanceValueRub,

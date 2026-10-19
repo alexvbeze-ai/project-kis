@@ -120,6 +120,7 @@ components:
               instrumentId: { type: string, example: "MOEX:SBER" }
               ticker: { type: string }
               displayName: { type: string }
+              shortName: { type: string, description: краткое наименование для UI (облигации — эмитент + серия) }
               assetClass: { type: string, enum: [stock, bond, etf, currency, other], description: класс актива для группировки в UI }
               instrumentType: { type: string, nullable: true, description: сырое значение instrumentType из ответа брокера }
               quantity: { type: number }

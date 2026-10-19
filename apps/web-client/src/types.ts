@@ -19,6 +19,8 @@ export interface Position {
   instrumentId: string;  // канонический id, напр. "MOEX:SBER"
   ticker: string;
   displayName: string;
+  /** Краткое наименование для таблиц (облигации — эмитент + серия) */
+  shortName: string;
   /** Класс актива для группировки в UI (акции/облигации/фонды…, BCS-SPEC §3.2) */
   assetClass: AssetClass;
   /** Сырое значение instrumentType от брокера (справочно) */

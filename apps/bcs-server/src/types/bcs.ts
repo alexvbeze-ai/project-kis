@@ -63,6 +63,11 @@ export interface BcsPosition {
   faceValue?: number;
   accruedIncome?: number;
   logoLink?: string;
+  /**
+   * В swagger портфеля этого поля НЕТ, но фактический ответ БКС его возвращает.
+   * Используем как источник процентных метрик (см. §3.4 агрегацию).
+   */
+  changePercentage?: number;
   isBlocked?: boolean;
   isBlockedTradeAccount?: boolean;
   lockedForFutures?: number;

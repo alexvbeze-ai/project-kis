@@ -24,3 +24,18 @@ export function loadRefreshIntervalMs(): number {
 export function saveRefreshIntervalMs(ms: number): void {
   localStorage.setItem(REFRESH_KEY, String(ms));
 }
+
+// ---------- Тема интерфейса (light/dark) ----------
+
+const THEME_KEY = "kis.theme";
+export type Theme = "dark" | "light";
+
+export function loadTheme(): Theme {
+  return localStorage.getItem(THEME_KEY) === "light" ? "light" : "dark";
+}
+
+/** Применяет класс .dark к <html> (Tailwind darkMode:"class") и сохраняет выбор. */
+export function applyTheme(theme: Theme): void {
+  localStorage.setItem(THEME_KEY, theme);
+  document.documentElement.classList.toggle("dark", theme === "dark");
+}

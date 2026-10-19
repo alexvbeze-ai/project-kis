@@ -15,6 +15,7 @@ import type {
   UnifiedAccount,
   AssetClass,
 } from "../types/unified.js";
+import { makeShortName } from "../types/unified.js";
 
 function toInstrumentId(p: BcsPosition): string {
   const ex = (p.exchange || "MOEX").toUpperCase();
@@ -60,6 +61,7 @@ export function classifyAssetClass(p: BcsPosition): AssetClass {
 interface Agg {
   key: string;
   rep: BcsPosition; // запись-представитель (максимальная стоимость) для метаданных
+  rowsList: BcsPosition[]; // все исходные строки — для взвешенной агрегации percent-полей
   quantity: number;
   locked: number;
   balanceQtyValue: number; // Σ qty·balancePrice — для взвешенной средней
@@ -82,9 +84,10 @@ function aggregateByInstrument(rows: BcsPosition[]): Agg[] {
     const key = [p.account ?? "", (p.exchange ?? "MOEX").toUpperCase(), p.ticker ?? "", p.currency ?? "RUB"].join("|");
     let a = map.get(key);
     if (!a) {
-      a = { key, rep: p, quantity: 0, locked: 0, balanceQtyValue: 0, balanceValueRub: 0, currentValue: 0, currentValueRub: 0, unrealizedPL: 0, dailyPL: 0, rows: 0 };
+      a = { key, rep: p, rowsList: [], quantity: 0, locked: 0, balanceQtyValue: 0, balanceValueRub: 0, currentValue: 0, currentValueRub: 0, unrealizedPL: 0, dailyPL: 0, rows: 0 };
       map.set(key, a);
     }
+    a.rowsList.push(p);
     const q = num(p.quantity);
     a.quantity += q;
     a.locked += num(p.locked);
@@ -138,21 +141,52 @@ export function normalizePortfolio(raw: BcsPortfolioRaw): UnifiedPortfolio {
 
   for (const a of aggs) {
     const rep = a.rep;
+    const assetClass = classifyAssetClass(rep);
     const avgPrice = a.quantity > 0 ? a.balanceQtyValue / a.quantity : null;
     const price = num(rep.currentPrice);
     const marketValueRub = a.currentValueRub || a.quantity * price;
     const balanceValueRub = a.balanceValueRub || (avgPrice != null ? a.quantity * avgPrice : null);
-    const unrealizedPct =
-      balanceValueRub && balanceValueRub > 0 ? (a.unrealizedPL / balanceValueRub) * 100 : null;
-    // Дневная динамика: dailyPL относительно предыдущей стоимости позиции.
+    // Дневная динамика: приоритет — фактическое поле БКС changePercentage
+    // (отсутствует в swagger, но приходит в ответе; см. BCS-SPEC §3.4), затем
+    // dailyPercentPL (взвешивание по стоимости); fallback — расчёт из dailyPL
+    // относительно предыдущей стоимости позиции.
     const prevValueRub = marketValueRub - a.dailyPL;
-    const dailyPct = prevValueRub > 0 ? (a.dailyPL / prevValueRub) * 100 : null;
+    const dailyPctFallback = prevValueRub > 0 ? (a.dailyPL / prevValueRub) * 100 : null;
+    let dailyPctSum = 0;
+    let dailyPctWeight = 0;
+    for (const r of a.rowsList) {
+      const v = r.changePercentage ?? r.dailyPercentPL;
+      if (v == null) continue;
+      const w = num(r.currentValueRub ?? r.currentValue);
+      dailyPctSum += v * (w > 0 ? w : 1);
+      dailyPctWeight += w > 0 ? w : 1;
+    }
+    const dailyPct = dailyPctWeight > 0 ? dailyPctSum / dailyPctWeight : dailyPctFallback;
+
+    // Прирост с момента открытия: приоритет — собственное поле БКС
+    // unrealizedPercentPL (взвешивание по балансовой стоимости); fallback —
+    // расчёт из абсолютного unrealizedPL.
+    let uplpSum = 0;
+    let uplpWeight = 0;
+    for (const r of a.rowsList) {
+      if (r.unrealizedPercentPL == null) continue;
+      const w = num(r.balanceValueRub ?? r.balanceValue);
+      uplpSum += r.unrealizedPercentPL * (w > 0 ? w : 1);
+      uplpWeight += w > 0 ? w : 1;
+    }
+    const unrealizedPct =
+      uplpWeight > 0
+        ? uplpSum / uplpWeight
+        : balanceValueRub && balanceValueRub > 0
+          ? (a.unrealizedPL / balanceValueRub) * 100
+          : null;
 
     positions.push({
       instrumentId: toInstrumentId(rep),
       ticker: rep.ticker ?? "",
       displayName: rep.displayName ?? rep.ticker ?? "",
-      assetClass: classifyAssetClass(rep),
+      assetClass,
+      shortName: makeShortName(rep.ticker ?? "", rep.displayName, assetClass),
       instrumentType: rep.instrumentType ?? null,
       quantity: a.quantity,
       avgPrice,
