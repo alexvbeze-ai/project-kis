@@ -51,7 +51,7 @@ const NEW_SHAPE = [
 describe("parseBcsPortfolio (только новый контракт)", () => {
   it("принимает голый массив", () => {
     const r = parseBcsPortfolio(NEW_SHAPE);
-    expect(r.positions).toHaveLength(2);
+    expect(r).toHaveLength(2);
   });
 
   it("отвергает старый формат-обёртку {positions:[]}", () => {

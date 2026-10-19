@@ -73,19 +73,14 @@ export interface BcsPosition {
 /** Корень ответа портфеля по актуальному контракту — голый JSON-массив. */
 export type BcsPortfolioRaw = BcsPosition[];
 
-/** Внутренняя обёртка для normalizePortfolio (наш convenience-тип, не формат БКС). */
-export interface BcsPortfolioResponse {
-  positions: BcsPosition[];
-}
-
 /**
  * Валидация ответа портфеля строго по новому контракту (BCS-SPEC §3.2):
  * допускается только голый массив объектов Portfolio[]. Fallback'ов на старый
  * формат `{ positions: [] }` нет — поддержка удалена по решению от 19.10.2026.
  */
-export function parseBcsPortfolio(json: unknown): BcsPortfolioResponse {
+export function parseBcsPortfolio(json: unknown): BcsPortfolioRaw {
   if (!Array.isArray(json)) {
     throw new Error("Неожиданная структура ответа BCS API: ожидался JSON-массив Portfolio[]");
   }
-  return { positions: json as BcsPosition[] };
+  return json as BcsPosition[];
 }

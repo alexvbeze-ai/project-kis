@@ -12,9 +12,11 @@ import {
 } from "./lib/tokenStore";
 import { ConnectScreen } from "./components/ConnectScreen";
 import { PortfolioView } from "./components/PortfolioView";
+import { SettingsPanel } from "./components/SettingsPanel";
+import { RefreshIcon, SettingsIcon } from "./components/icons";
+import { loadRefreshIntervalMs } from "./lib/settings";
 
 const BROKER = "bcs"; // MVP: клиент не знает о брокерах — это просто id подключения
-const AUTO_REFRESH_MS = 60_000;
 
 type Screen = "connect" | "portfolio";
 
@@ -25,6 +27,8 @@ export default function App() {
   const [portfolio, setPortfolio] = useState<UnifiedPortfolio | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [refreshMs, setRefreshMs] = useState<number>(() => loadRefreshIntervalMs());
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const timerRef = useRef<number | null>(null);
 
   /** Загрузить портфель; при ротации токена — перезаписать его в браузере. */
@@ -57,15 +61,19 @@ export default function App() {
     }
   }, []);
 
-  // автообновление + первая загрузка на экране портфеля
+  // первая загрузка при входе/перезагрузке страницы + автообновление из настроек
+  // (0 = «не обновлять» — портфель это экран для раздумий, а не онлайн-котировки)
   useEffect(() => {
     if (screen !== "portfolio") return;
     load(token);
-    timerRef.current = window.setInterval(() => load(token), AUTO_REFRESH_MS);
+    if (refreshMs > 0) {
+      timerRef.current = window.setInterval(() => load(token), refreshMs);
+    }
     return () => {
       if (timerRef.current) window.clearInterval(timerRef.current);
+      timerRef.current = null;
     };
-  }, [screen, token, load]);
+  }, [screen, token, load, refreshMs]);
 
   const onConnect = async (newToken: string, newMode: StorageMode) => {
     setModeState(newMode);
@@ -101,13 +109,39 @@ export default function App() {
           </div>
           {screen === "portfolio" && (
             <div className="flex items-center gap-2">
+              {/* Обновить — элегантная иконка ⟳ */}
               <button
                 onClick={() => load(token)}
                 disabled={loading}
-                className="rounded-lg border border-slate-700 px-3 py-1.5 text-sm transition hover:bg-slate-800 disabled:opacity-50"
+                title="Обновить портфель"
+                aria-label="Обновить портфель"
+                className="rounded-lg border border-slate-700 p-2 text-slate-300 transition hover:bg-slate-800 hover:text-white disabled:opacity-50"
               >
-                {loading ? "Обновляется…" : "⟳ Обновить"}
+                <RefreshIcon className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
               </button>
+              {/* Настройки — интервал автообновления */}
+              <div className="relative">
+                <button
+                  onClick={() => setSettingsOpen((v) => !v)}
+                  title="Настройки"
+                  aria-label="Настройки"
+                  aria-expanded={settingsOpen}
+                  className={`rounded-lg border p-2 transition ${
+                    settingsOpen
+                      ? "border-kis-accent/60 bg-slate-800 text-kis-accent"
+                      : "border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
+                  }`}
+                >
+                  <SettingsIcon className="h-4 w-4" />
+                </button>
+                {settingsOpen && (
+                  <SettingsPanel
+                    intervalMs={refreshMs}
+                    onChange={setRefreshMs}
+                    onClose={() => setSettingsOpen(false)}
+                  />
+                )}
+              </div>
               <button
                 onClick={disconnect}
                 className="rounded-lg border border-red-900/60 px-3 py-1.5 text-sm text-kis-down transition hover:bg-red-950/40"
@@ -153,11 +187,6 @@ export default function App() {
           </div>
         )}
       </main>
-
-      <footer className="mx-auto max-w-6xl px-4 pb-8 pt-4 text-center text-xs text-slate-600">
-        Ticker-данные предоставлены брокером. Котировки МосБиржи и иконки компаний — в v0.3
-        (market-data-server). Не является инвестиционной рекомендацией.
-      </footer>
     </div>
   );
 }

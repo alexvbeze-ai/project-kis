@@ -12,12 +12,15 @@ export interface Account {
   lockedCash: number;
 }
 
+/** Класс актива для группировки таблиц в UI (BCS-SPEC §3.2). */
+export type AssetClass = "stock" | "bond" | "etf" | "currency" | "other";
+
 export interface Position {
   instrumentId: string;  // канонический id, напр. "MOEX:SBER"
   ticker: string;
   displayName: string;
   /** Класс актива для группировки в UI (акции/облигации/фонды…, BCS-SPEC §3.2) */
-  assetClass: "stock" | "bond" | "etf" | "currency" | "other";
+  assetClass: AssetClass;
   /** Сырое значение instrumentType от брокера (справочно) */
   instrumentType: string | null;
   quantity: number;

@@ -5,7 +5,7 @@
  * currentValueRub/Usd/Eur. Любой непустой refresh-токен считается валидным.
  * НЕ включать на публичном сервере!
  */
-import type { BcsPosition, BcsPortfolioResponse } from "../types/bcs.js";
+import type { BcsPosition, BcsPortfolioRaw } from "../types/bcs.js";
 
 function pos(t: Partial<BcsPosition> & Pick<BcsPosition, "ticker" | "displayName">): BcsPosition {
   return {
@@ -100,7 +100,7 @@ function cash(quantity: number, account: string): BcsPosition {
   });
 }
 
-export function mockBcsPortfolio(): BcsPortfolioResponse {
+export function mockBcsPortfolio(): BcsPortfolioRaw {
   const bond = (
     ticker: string,
     displayName: string,
@@ -134,5 +134,5 @@ export function mockBcsPortfolio(): BcsPortfolioResponse {
     cash(184_320.55, "74567***1234"),
     cash(42_100.0, "IIS-7788"),
   ];
-  return { positions };
+  return positions;
 }

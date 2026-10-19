@@ -8,7 +8,7 @@
  * количества и стоимости суммируются, средневзвешенная цена пересчитывается,
  * portfolioShare / unrealizedPercentPL / dailyPercentPL — тоже.
  */
-import type { BcsPosition, BcsPortfolioResponse } from "../types/bcs.js";
+import type { BcsPosition, BcsPortfolioRaw } from "../types/bcs.js";
 import type {
   UnifiedPortfolio,
   UnifiedPosition,
@@ -103,11 +103,11 @@ function aggregateByInstrument(rows: BcsPosition[]): Agg[] {
   return [...map.values()];
 }
 
-export function normalizePortfolio(raw: BcsPortfolioResponse): UnifiedPortfolio {
+export function normalizePortfolio(raw: BcsPortfolioRaw): UnifiedPortfolio {
   const positions: UnifiedPosition[] = [];
   const accounts = new Map<string, UnifiedAccount>();
 
-  const all = raw.positions ?? [];
+  const all = Array.isArray(raw) ? raw : [];
 
   for (const p of all) {
     // Актуальный контракт: денежная позиция = type "moneyLimit" / upperType "CURRENCY".
