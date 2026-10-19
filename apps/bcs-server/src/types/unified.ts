@@ -63,7 +63,7 @@ export function makeShortName(ticker: string, displayName: string | undefined, a
   let s = full
     .replace(/^(ПАО|АО|ОАО|ЗАО)\s+/i, "")
     .replace(/\s+(корпоративные\s+)?(облигации|бонды|офз|федеральные\s+займы|еврооблигации)\b.*$/i, "");
-  const series = full.match(/(?:серии?\s*)([0-9А-Za-zА-Яа-я]+(?:-[0-9А-Za-z]+)*)/i)?.[1];
+  const series = full.match(/(?:серии?\s*)([\p{L}\p{N}]+(?:-[\p{L}\p{N}]+)*)/iu)?.[1];
   if (series) s += ` ${series}`;
   s = s.replace(/\s+/g, " ").trim();
   return s.length > 32 ? s.slice(0, 32).trimEnd() + "…" : s || ticker;

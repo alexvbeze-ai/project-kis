@@ -14,7 +14,7 @@ import { ConnectScreen } from "./components/ConnectScreen";
 import { PortfolioView } from "./components/PortfolioView";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { RefreshIcon, SettingsIcon } from "./components/icons";
-import { loadRefreshIntervalMs } from "./lib/settings";
+import { applyTheme, loadRefreshIntervalMs, loadTheme } from "./lib/settings";
 
 const BROKER = "bcs"; // MVP: клиент не знает о брокерах — это просто id подключения
 
@@ -30,6 +30,11 @@ export default function App() {
   const [refreshMs, setRefreshMs] = useState<number>(() => loadRefreshIntervalMs());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const timerRef = useRef<number | null>(null);
+
+  // тема применяется при старте (анти-FOUC-скрипт в index.html делает то же заранее)
+  useEffect(() => {
+    applyTheme(loadTheme());
+  }, []);
 
   /** Загрузить портфель; при ротации токена — перезаписать его в браузере. */
   const load = useCallback(async (t: string) => {
@@ -94,16 +99,26 @@ export default function App() {
     setScreen("connect");
   };
 
+  /** Замена токена из панели настроек: сохраняем новый и перезагружаем портфель. */
+  const replaceToken = async (newToken: string) => {
+    saveToken(newToken);
+    setToken(newToken);
+    setError(null);
+    setSettingsOpen(false);
+    setScreen("portfolio");
+    await load(newToken);
+  };
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200">
-      <header className="border-b border-slate-800 bg-slate-900/60 backdrop-blur">
+    <div className="min-h-screen bg-slate-100 text-slate-700 transition-colors dark:bg-slate-950 dark:text-slate-200">
+      <header className="border-b border-slate-200 bg-white/80 backdrop-blur dark:border-slate-800 dark:bg-slate-900/60">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-kis-accent font-black text-slate-950">
               K
             </div>
             <div>
-              <h1 className="text-lg font-bold leading-tight text-white">KIS</h1>
+              <h1 className="text-lg font-bold leading-tight text-slate-900 dark:text-white">KIS</h1>
               <p className="text-xs text-slate-500">Кабинет инвестиционной стратегии · MVP</p>
             </div>
           </div>
@@ -115,11 +130,11 @@ export default function App() {
                 disabled={loading}
                 title="Обновить портфель"
                 aria-label="Обновить портфель"
-                className="rounded-lg border border-slate-700 p-2 text-slate-300 transition hover:bg-slate-800 hover:text-white disabled:opacity-50"
+                className="rounded-lg border border-slate-300 p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
               >
                 <RefreshIcon className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
               </button>
-              {/* Настройки — интервал автообновления */}
+              {/* Настройки — тема, интервал автообновления, управление токеном */}
               <div className="relative">
                 <button
                   onClick={() => setSettingsOpen((v) => !v)}
@@ -128,8 +143,8 @@ export default function App() {
                   aria-expanded={settingsOpen}
                   className={`rounded-lg border p-2 transition ${
                     settingsOpen
-                      ? "border-kis-accent/60 bg-slate-800 text-kis-accent"
-                      : "border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
+                      ? "border-kis-accent/60 bg-slate-100 text-kis-accent dark:bg-slate-800"
+                      : "border-slate-300 text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
                   }`}
                 >
                   <SettingsIcon className="h-4 w-4" />
@@ -139,15 +154,14 @@ export default function App() {
                     intervalMs={refreshMs}
                     onChange={setRefreshMs}
                     onClose={() => setSettingsOpen(false)}
+                    onTokenChange={replaceToken}
+                    onDisconnect={() => {
+                      setSettingsOpen(false);
+                      disconnect();
+                    }}
                   />
                 )}
               </div>
-              <button
-                onClick={disconnect}
-                className="rounded-lg border border-red-900/60 px-3 py-1.5 text-sm text-kis-down transition hover:bg-red-950/40"
-              >
-                Отключить токен
-              </button>
             </div>
           )}
         </div>
@@ -165,7 +179,7 @@ export default function App() {
         ) : portfolio ? (
           <>
             {error && (
-              <div className="mb-4 rounded-lg border border-red-900 bg-red-950/50 p-3 text-sm text-kis-down">
+              <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-kis-down dark:border-red-900 dark:bg-red-950/50">
                 {error} (показаны последние полученные данные)
               </div>
             )}
@@ -178,7 +192,7 @@ export default function App() {
               <div className="mt-4">
                 <button
                   onClick={() => setScreen("connect")}
-                  className="rounded-lg border border-slate-700 px-4 py-2 text-sm hover:bg-slate-800"
+                  className="rounded-lg border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
                 >
                   Изменить токен
                 </button>

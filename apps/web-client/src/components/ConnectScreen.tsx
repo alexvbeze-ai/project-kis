@@ -21,10 +21,10 @@ export function ConnectScreen({ initialToken, initialMode, onConnect, busy, erro
   const valid = token.trim().length > 20;
 
   return (
-    <div className="mx-auto mt-16 max-w-xl rounded-2xl border border-slate-800 bg-slate-900 p-8 shadow-xl">
-      <h2 className="text-2xl font-bold text-white">Подключение к брокеру</h2>
-      <p className="mt-2 text-sm leading-relaxed text-slate-400">
-        Вставьте <span className="text-slate-200">refresh-токен</span> вашего кабинета БКС.
+    <div className="mx-auto mt-16 max-w-xl rounded-2xl border border-slate-200 bg-white p-8 shadow-xl dark:border-slate-800 dark:bg-slate-900">
+      <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Подключение к брокеру</h2>
+      <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
+        Вставьте <span className="text-slate-700 dark:text-slate-200">refresh-токен</span> вашего кабинета БКС.
         Мы получаем его у брокера и используем только для запроса портфеля.
       </p>
 
@@ -39,14 +39,14 @@ export function ConnectScreen({ initialToken, initialMode, onConnect, busy, erro
             rows={3}
             spellCheck={false}
             placeholder="eyJhbGciOi..."
-            className={`w-full resize-none rounded-lg border bg-slate-950 p-3 pr-20 font-mono text-sm text-slate-200 outline-none transition focus:border-kis-accent ${
-              token && !valid ? "border-kis-down" : "border-slate-700"
+            className={`w-full resize-none rounded-lg border bg-white p-3 pr-20 font-mono text-sm text-slate-900 outline-none transition focus:border-kis-accent dark:bg-slate-950 dark:text-slate-200 ${
+              token && !valid ? "border-kis-down" : "border-slate-300 dark:border-slate-700"
             }`}
           />
           <button
             type="button"
             onClick={() => setShowToken((s) => !s)}
-            className="absolute right-2 top-2 rounded px-2 py-1 text-xs text-slate-400 hover:bg-slate-800"
+            className="absolute right-2 top-2 rounded px-2 py-1 text-xs text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
           >
             {showToken ? "скрыть" : "показать"}
           </button>
@@ -64,8 +64,8 @@ export function ConnectScreen({ initialToken, initialMode, onConnect, busy, erro
           <label
             className={`cursor-pointer rounded-lg border p-3 text-sm transition ${
               mode === "session"
-                ? "border-kis-accent bg-slate-800/60"
-                : "border-slate-700 hover:border-slate-600"
+                ? "border-kis-accent bg-slate-100 dark:bg-slate-800/60"
+                : "border-slate-300 hover:border-slate-400 dark:border-slate-700 dark:hover:border-slate-600"
             }`}
           >
             <input
@@ -74,16 +74,16 @@ export function ConnectScreen({ initialToken, initialMode, onConnect, busy, erro
               checked={mode === "session"}
               onChange={() => setMode("session")}
             />
-            <span className="font-medium text-slate-200">Только до закрытия вкладки</span>
-            <p className="mt-1 text-xs text-slate-400">
+            <span className="font-medium text-slate-800 dark:text-slate-200">Только до закрытия вкладки</span>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
               sessionStorage. Безопаснее: при закрытии браузера токен исчезает.
             </p>
           </label>
           <label
             className={`cursor-pointer rounded-lg border p-3 text-sm transition ${
               mode === "local"
-                ? "border-kis-accent bg-slate-800/60"
-                : "border-slate-700 hover:border-slate-600"
+                ? "border-kis-accent bg-slate-100 dark:bg-slate-800/60"
+                : "border-slate-300 hover:border-slate-400 dark:border-slate-700 dark:hover:border-slate-600"
             }`}
           >
             <input
@@ -92,22 +92,22 @@ export function ConnectScreen({ initialToken, initialMode, onConnect, busy, erro
               checked={mode === "local"}
               onChange={() => setMode("local")}
             />
-            <span className="font-medium text-slate-200">Сохранить в этом браузере</span>
-            <p className="mt-1 text-xs text-slate-400">
+            <span className="font-medium text-slate-800 dark:text-slate-200">Сохранить в этом браузере</span>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
               localStorage + обфускация (не настоящее шифрование). Удобно, но менее безопасно.
             </p>
           </label>
         </div>
       </fieldset>
 
-      <p className="mt-4 rounded-lg border border-slate-800 bg-slate-950/60 p-3 text-xs leading-relaxed text-slate-400">
-        🔒 Серверы KIS <span className="text-slate-200">не хранят</span> ваш токен: он живёт только в
+      <p className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs leading-relaxed text-slate-500 dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-400">
+        🔒 Серверы KIS <span className="font-semibold text-slate-800 dark:text-slate-200">не хранят</span> ваш токен: он живёт только в
         вашем браузере и передаётся на каждый запрос. Если брокер ротировал токен — браузер
         автоматически перезапишет его новым. Отключиться можно одной кнопкой.
       </p>
 
       {error && (
-        <div className="mt-4 rounded-lg border border-red-900 bg-red-950/50 p-3 text-sm text-kis-down">
+        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-kis-down dark:border-red-900 dark:bg-red-950/50">
           {error}
         </div>
       )}
