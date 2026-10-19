@@ -205,7 +205,45 @@ Authorization: Bearer <access_token>   (заголовок при handshake)
 Деньги определяются по `type == "moneyLimit"` (или `upperType == "CURRENCY"`); у денежной
 строки `quantity` — сумма в валюте цены.
 
-### 3.3 Ошибки endpoint'а «Портфель»
+Enum `instrumentType` (по справочнику `/api/v1/instruments/*`, значения те же и в позициях):
+`CURRENCY | STOCK | FOREIGN_STOCK | BONDS | NOTES | DEPOSITARY_RECEIPTS | EURO_BONDS |
+MUTUAL_FUNDS | ETF | FUTURES | OPTIONS | GOODS | INDICES`.
+В портфеле также встречаются коды классов расчётов (`TCS`, `ACRN`, …) — классификация
+позиций выполняется с fallback по `board`/`faceValue`/`accruedIncome` (см. §3.4).
+
+### 3.4 ⚠️ Дубли позиций: один инструмент = несколько записей (подтверждено на проде)
+
+**Симптом:** API возвращает котировки позиций не в одном экземпляре — у пользователя
+каждая позиция продублирована ×4.
+
+**Причина по документации:** ответ портфеля — это **сырые остатки/depoLimit-записи биржи**,
+сгруппированные брокером по ключу
+`(account, exchange, ticker, board, term, currency)` (в старом контракте — по субсчетам,
+deprecated `subAccountId`). Один инструмент даёт несколько строк, потому что:
+
+1. **`term` (срок расчётов)** — позиции T0/T1/T2/T365 никогда не сливаются между собой
+   (режимы торгов: Т0-премиум, обычные T1-расчёты, ночные сделки и т.п.);
+2. **разные `board`/секции** одной биржи (TQBR, FCPR, GLDR, …);
+3. **несколько счетов** пользователя (брокерский + ИИС) — разные `account`;
+4. **locked-часть**: количество, занятое под активные заявки (`locked`), может идти
+   отдельной записью от свободной части позиции.
+
+**Правило отображения (обязательно для всех клиентов ядра):** перед выводом позиции
+**агрегировать** строки по `(account, exchange, ticker, currency)`:
+
+| Поле | Как агрегировать |
+|---|---|
+| `quantity`, `locked`, `lockedForFutures`, `ratioQuantity` | сумма |
+| `balanceValue(Rub)`, `currentValue(Rub/Usd/Eur)`, `balanceValue` в валюте цены | сумма |
+| `unrealizedPL`, `dailyPL` | сумма |
+| `avgPrice/balancePrice` | Σ(quantity·price)/Σquantity (взвешенная по количеству) |
+| `currentPrice`, `scale`, `minimumStep`, `faceValue`, `accruedIncome` | взять из записи с максимальной стоимостью |
+| `portfolioShare`, `unrealizedPercentPL`, `dailyPercentPL` | пересчитать после агрегации |
+
+Агрегация выполнена в bcs-server (`normalize.ts::aggregateByInstrument`) — ядро и клиент
+получают уже единый набор позиций по одному инструменту на строку.
+
+### 3.5 Ошибки endpoint'а «Портфель»
 
 Документированный ответ ошибки (429 и другие 4xx/5xx) — объект `ErrorResponse`:
 
@@ -225,7 +263,7 @@ Authorization: Bearer <access_token>   (заголовок при handshake)
 | 429 | `RESOURCE_EXHAUSTED` | rate limit → UPSTREAM_RATE_LIMIT, backoff |
 | прочее 4xx/5xx | см. enum | пробросить статус и `type`/traceId в логи |
 
-### 3.4 Целевой поток MVP-сервера
+### 3.6 Целевой поток MVP-сервера
 
 ```
 [refresh_token в браузере пользователя]

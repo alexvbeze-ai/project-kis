@@ -88,7 +88,7 @@ export async function fetchPortfolio(refreshToken: string): Promise<PortfolioFet
     return { data, access };
   } catch (err) {
     if (err instanceof UnifiedApiError && err.code === "UPSTREAM_UNAUTHORIZED") {
-      // один retry со свежим access-токеном (BCS-SPEC §3.4 правило 2)
+      // один retry со свежим access-токеном (BCS-SPEC §3.6 правило 2)
       invalidateAccessToken(refreshToken);
       access = await getAccessToken(refreshToken);
       const data = await fetchPortfolioWithToken(access.accessToken);

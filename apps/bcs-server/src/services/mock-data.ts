@@ -101,21 +101,38 @@ function cash(quantity: number, account: string): BcsPosition {
 }
 
 export function mockBcsPortfolio(): BcsPortfolioResponse {
+  const bond = (
+    ticker: string,
+    displayName: string,
+    quantity: number,
+    balancePrice: number,
+    currentPrice: number,
+  ): BcsPosition => ({
+    ...stock(ticker, displayName, quantity, balancePrice, currentPrice),
+    instrumentType: "BONDS",
+    board: "TQNB",
+    faceValue: 1000,
+    accruedIncome: +(quantity * (currentPrice - balancePrice) * 0.05).toFixed(2),
+  });
+
+  const fund = stock("LQDT", "Фонд Ликвидность", 140, 110.1, 112.3);
+  fund.instrumentType = "MUTUAL_FUNDS";
+  fund.board = "TCMF";
+
   const positions: BcsPosition[] = [
     stock("LKOH", "ЛУКОЙЛ", 14, 6890.0, 7240.5),
-    stock("SB", "Сбербанк", 60, 289.1, 312.4),
+    // Демонстрация BCS-SPEC §3.4: тот же инструмент приходит несколькими записями
+    // (разные term + locked-часть) — normalize агрегирует их в одну строку UI.
+    pos({ ticker: "SB", displayName: "Сбербанк", quantity: 40, balancePrice: 289.1, currentPrice: 312.4, term: "T1" }),
+    pos({ ticker: "SB", displayName: "Сбербанк", quantity: 20, balancePrice: 289.5, currentPrice: 312.4, term: "T0", locked: 5 }),
     stock("GAZP", "Газпром", 110, 142.6, 138.2),
-    stock("ROSNEFT", "Роснефть", 45, 465.2, 478.0),
+    stock("TRNFP", "Транснефть ап", 30, 1420.0, 1518.4),
     stock("MGNT", "Магнит", 18, 3980.5, 3610.0),
-    stock("VTBR", "ВТБ", 15000, 68.4, 72.1),
-    stock("TMTK", "ТМК", 900, 71.0, 78.4),
-    stock("SOLG", "Соллерс", 11, 990.0, 1042.0),
-    stock("IRAO", "Интер РАО", 130, 14.1, 15.2),
-    stock("LQDT", "Фонд Ликвидность", 140, 110.1, 112.3),
+    bond("SU26216", "ОФЗ 26216", 30, 84.9, 87.2),
+    bond("SU26243", "ОФЗ 26243", 20, 71.4, 73.05),
+    fund,
     cash(184_320.55, "74567***1234"),
     cash(42_100.0, "IIS-7788"),
   ];
-  const total = positions.reduce((s, p) => s + (p.currentValueRub ?? 0), 0);
-  for (const p of positions) p.portfolioShare = +(((p.currentValueRub ?? 0) / total) * 100).toFixed(2);
   return { positions };
 }

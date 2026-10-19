@@ -120,12 +120,15 @@ components:
               instrumentId: { type: string, example: "MOEX:SBER" }
               ticker: { type: string }
               displayName: { type: string }
+              assetClass: { type: string, enum: [stock, bond, etf, currency, other], description: класс актива для группировки в UI }
+              instrumentType: { type: string, nullable: true, description: сырое значение instrumentType из ответа брокера }
               quantity: { type: number }
               avgPrice: { type: number, nullable: true }
               price: { type: number }
               currency: { type: string }
               marketValue: { type: number }
               marketValueRub: { type: number, nullable: true }
+              balanceValueRub: { type: number, nullable: true, description: балансовая стоимость в рублях (цена покупки) }
               unrealizedPL: { type: number, nullable: true }
               unrealizedPercentPL: { type: number, nullable: true }
               dailyPL: { type: number, nullable: true }

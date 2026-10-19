@@ -23,16 +23,24 @@ export interface UnifiedAccount {
   lockedCash: number;
 }
 
+/** Класс актива для группировки в UI (BCS-SPEC §3.2, классификация — normalize.classifyAssetClass). */
+export type AssetClass = "stock" | "bond" | "etf" | "currency" | "other";
+
 export interface UnifiedPosition {
   instrumentId: string;
   ticker: string;
   displayName: string;
+  assetClass: AssetClass;
+  /** Сырое значение instrumentType из ответа БКС (справочно) */
+  instrumentType: string | null;
   quantity: number;
   avgPrice: number | null;
   price: number;
   currency: string;
   marketValue: number;
   marketValueRub: number | null;
+  /** Балансовая стоимость в рублях (для отображения «по цене покупки», BCS-SPEC §3.2) */
+  balanceValueRub: number | null;
   unrealizedPL: number | null;
   unrealizedPercentPL: number | null;
   dailyPL: number | null;

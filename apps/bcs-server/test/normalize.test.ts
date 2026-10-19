@@ -77,3 +77,50 @@ describe("normalizePortfolio", () => {
     expect(u.positions).toHaveLength(2);
   });
 });
+
+describe("агрегация дублей позиций (BCS-SPEC §3.4)", () => {
+  it("сливает строки одного инструмента с разными term в одну позицию", () => {
+    const u = normalizePortfolio({
+      positions: [
+        { ...base, term: "T0", quantity: 5, balancePrice: 200, balanceValue: 1000, balanceValueRub: 1000, currentValue: 1250, currentValueRub: 1250 },
+        { ...base, term: "T1", quantity: 10, balancePrice: 250, balanceValue: 2500, balanceValueRub: 2500, currentValue: 2500, currentValueRub: 2500 },
+        { ...base, term: "T1", board: "FCPR", quantity: 2, balancePrice: 300, balanceValue: 600, balanceValueRub: 600, currentValue: 500, currentValueRub: 500 },
+      ],
+    });
+    expect(u.positions).toHaveLength(1);
+    const p = u.positions[0];
+    expect(p.quantity).toBe(17);
+    // взвешенная средняя: (5*200 + 10*250 + 2*300)/17
+    expect(p.avgPrice).toBeCloseTo((1000 + 2500 + 600) / 17, 4);
+    expect(p.marketValueRub).toBe(4250);
+    expect(p.balanceValueRub).toBe(4100);
+    expect(p.portfolioShare).toBeCloseTo(100, 6);
+  });
+
+  it("не сливает один тикер на разных счетах и считает долю от суммы", () => {
+    const u = normalizePortfolio({
+      positions: [
+        base,
+        { ...base, account: "IIS-999", quantity: 10, balanceValue: 2000, balanceValueRub: 2000, currentValue: 2500, currentValueRub: 2500 },
+      ],
+    });
+    expect(u.positions).toHaveLength(2);
+    expect(u.positions[0].portfolioShare).toBeCloseTo(50, 6);
+  });
+
+  it("классифицирует инструменты по instrumentType и fallback по board", () => {
+    const u = normalizePortfolio({
+      positions: [
+        { ...base, ticker: "BOND1", instrumentType: "BONDS" },
+        { ...base, ticker: "BOND2", instrumentType: "TCS", board: "TQNB" },
+        { ...base, ticker: "FND1", instrumentType: "MUTUAL_FUNDS" },
+        { ...base, ticker: "STP1", instrumentType: "TCS", board: "TQBR" },
+      ],
+    });
+    const byTicker = Object.fromEntries(u.positions.map((p) => [p.ticker, p.assetClass]));
+    expect(byTicker.BOND1).toBe("bond");
+    expect(byTicker.BOND2).toBe("bond"); // fallback по board TQNB
+    expect(byTicker.FND1).toBe("etf");
+    expect(byTicker.STP1).toBe("stock");
+  });
+});

@@ -16,12 +16,18 @@ export interface Position {
   instrumentId: string;  // канонический id, напр. "MOEX:SBER"
   ticker: string;
   displayName: string;
+  /** Класс актива для группировки в UI (акции/облигации/фонды…, BCS-SPEC §3.2) */
+  assetClass: "stock" | "bond" | "etf" | "currency" | "other";
+  /** Сырое значение instrumentType от брокера (справочно) */
+  instrumentType: string | null;
   quantity: number;
   avgPrice: number | null;
   price: number;
   currency: string;
   marketValue: number;
   marketValueRub: number | null;
+  /** Балансовая стоимость в рублях (по цене покупки) */
+  balanceValueRub: number | null;
   unrealizedPL: number | null;
   unrealizedPercentPL: number | null;
   dailyPL: number | null;
