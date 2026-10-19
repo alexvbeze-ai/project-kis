@@ -4,7 +4,7 @@
  */
 import { request } from "undici";
 import { config } from "../config.js";
-import { normalizeBcsPortfolioResponse, type BcsPortfolioResponse } from "../types/bcs.js";
+import { parseBcsPortfolio, type BcsPortfolioResponse } from "../types/bcs.js";
 import { UnifiedApiError } from "../types/unified.js";
 import { getAccessToken, invalidateAccessToken, type AccessResult } from "./keycloak.js";
 import { mockBcsPortfolio } from "./mock-data.js";
@@ -67,9 +67,9 @@ async function fetchPortfolioWithToken(accessToken: string): Promise<BcsPortfoli
     });
   }
   try {
-    // Новый контракт (swagger trade-api.bcs.ru): голый массив позиций.
-    // Старый (PDF/BCS-SPEC §3.2): { positions: [...] }. Поддерживаем оба.
-    return normalizeBcsPortfolioResponse(json);
+    // Актуальный контракт (BCS-SPEC §3.2, llms-full.txt от 19.10.2026):
+    // корень ответа — голый JSON-массив Portfolio[]. Старый формат не поддерживается.
+    return parseBcsPortfolio(json);
   } catch {
     console.warn(`[bcs-api] portfolio 200, неожиданная структура: ${text.slice(0, 500)}`);
     throw new UnifiedApiError(502, "UPSTREAM_UNAVAILABLE", "Неожиданная структура ответа BCS API", {

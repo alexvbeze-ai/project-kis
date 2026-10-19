@@ -1,55 +1,74 @@
 # BCS Trade API — Спецификация (BCS-SPEC.md)
 
-> Источник: `docs/api/trade-api-docs.pdf` («Инструкция по использованию API БКС», 103 стр.)
-> и веб-справочник: <https://trade-api.bcs.ru/> (файл `docs/api/bcs-api-doc-link.txt`).
+> **Источник истины:** `https://trade-api.bcs.ru/llms-full.txt` (полная machine-readable
+> документация по стандарту llmstxt.org). Снимок сохранён в репозитории:
+> `docs/api/llms-full.txt`, дата снятия: **19.10.2026**.
+> Веб-справочник: <https://trade-api.bcs.ru/> (`docs/api/bcs-api-doc-link.txt`).
 >
-> Назначение документа: точная спецификация endpoints, схем запросов/ответов, токенов и
-> ошибок — для написания собственного сервера (backend-for-frontend), который в собственном
-> веб-клиенте отображает данные портфеля.
+> ⚠️ Старый PDF (`docs/api/trade-api-docs.pdf`) **устарел** и больше не является источником:
+> БКС изменил контракт портфеля, переименовал поля, добавил sync-версии заявок и новые WS-каналы.
+> Все расхождения с PDF зафиксированы в §10 «Что изменилось относительно старого контракта».
 >
-> **Область MVP проекта:** только чтение портфеля по refresh-токену
-> (`Авторизация → access_token → GET /portfolio`). Остальные endpoints задокументированы
-> как справочный материал для будущего расширения.
+> **Политика проекта:** поддержка старого API и обратных совместимостей («костылей») **удалена**.
+> Код пишется строго под актуальный контракт.
+>
+> **Назначение документа:** точная спецификация endpoints, схем запросов/ответов, токенов,
+> лимитов и ошибок — для собственного backend-for-frontend (bcs-server → core-server → web-client),
+> отображающего данные портфеля.
+>
+> **Область MVP:** только чтение портфеля по refresh-токену
+> (`Авторизация → access_token → GET /portfolio`). Остальное — справочно для расширения.
 
 ---
 
 ## 1. Общая информация
 
-- Все HTTP REST endpoints находятся на хосте **`https://be.broker.ru`**, каждый сервис —
-  под своим путём-префиксом (`/trade-api-*`).
-- Все WebSocket (стриминг) endpoints — на хосте **`wss://ws.broker.ru`**.
-- Формат данных — JSON.
-- Авторизация бизнес-запросов — заголовок `Authorization: Bearer <access_token>` (JWT).
-- Один refresh/access токен привязан **только к одному брокерскому счёту**; доступ к
-  портфелю другого счёта этим токеном невозможен.
-- Для работы через API нужен хотя бы один брокерский счёт в «БКС Мир инвестиций».
+- HTTP REST endpoints: хост **`https://be.broker.ru`**, каждый сервис — под своим путём-префиксом
+  (`/trade-api-keycloak`, `/trade-api-bff-portfolio`, `/trade-api-bff-limit`,
+  `/trade-api-bff-operations`, `/trade-api-market-data-connector`, `/trade-api-information-service`,
+  `/trade-api-bff-marginal-indicators`). В swagger-страницах paths даны без префикса
+  (например `/api/v1/portfolio`) — префикс сервиса добавляется к base URL.
+- WebSocket endpoints: хост **`wss://ws.broker.ru`** (те же пути-префиксы + суффикс `/ws`).
+- Формат данных — JSON; `Accept: application/json`.
+- Авторизация бизнес-запросов: `Authorization: Bearer <access_token>` (JWT).
+- Один refresh/access токен привязан **только к одному брокерскому счёту**.
+- Требуется хотя бы один брокерский счёт в «БКС Мир инвестиций».
+- **Время:** все поля `dateTime` передаются в формате **UTC**; преобразование в локальное
+  время — на стороне клиента.
 
-### Сводная таблица endpoints
+### Сводная таблица endpoints (актуальный контракт, 19.10.2026)
 
 | # | Сервис | Метод | URL | Права | Нужен для MVP |
 |---|--------|-------|-----|-------|---------------|
 | 1 | Авторизация (Keycloak) | POST | `https://be.broker.ru/trade-api-keycloak/realms/tradeapi/protocol/openid-connect/token` | — | **Да** |
 | 2 | Портфель (HTTP) | GET | `https://be.broker.ru/trade-api-bff-portfolio/api/v1/portfolio` | read/write | **Да** |
-| 3 | Портфель (WS) | WS | `wss://ws.broker.ru/trade-api-bff-portfolio/api/v1/portfolio/ws` | read/write | Опционально (стриминг портфеля) |
-| 4 | Лимиты (HTTP) | GET | `https://be.broker.ru/trade-api-bff-limit/api/v1/limits` | read/write | Альтернатива портфелю |
+| 3 | Портфель (WS) | WS | `wss://ws.broker.ru/trade-api-bff-portfolio/api/v1/portfolio/ws` | read/write | Опционально |
+| 4 | Лимиты (HTTP) | GET | `https://be.broker.ru/trade-api-bff-limit/api/v1/limits` | read/write | Альтернатива |
 | 5 | Лимиты (WS) | WS | `wss://ws.broker.ru/trade-api-bff-limit/api/v1/limits/ws` | read/write | — |
-| 6 | Создание заявки | POST | `https://be.broker.ru/trade-api-bff-operations/api/v1/orders` | **write** | Нет |
-| 7 | Изменение заявки | POST | `https://be.broker.ru/trade-api-bff-operations/api/v1/orders/{originalClientOrderId}` | **write** | Нет |
-| 8 | Отмена заявки | POST | `https://be.broker.ru/trade-api-bff-operations/api/v1/orders/{originalClientOrderId}/cancel` | **write** | Нет |
-| 9 | Статус заявки | GET | `https://be.broker.ru/trade-api-bff-operations/api/v1/orders/{originalClientOrderId}` | read/write | Нет |
-| 10 | Стриминг статусов заявок | WS | `wss://ws.broker.ru/trade-api-bff-operations/api/v1/orders/transaction/ws` | write | Нет |
-| 11 | Стриминг исполнений | WS | `wss://ws.broker.ru/trade-api-bff-operations/api/v1/orders/execution/ws` | write | Нет |
-| 12 | Стакан (WS) | WS | `wss://ws.broker.ru/trade-api-market-data-connector/api/v1/market-data/ws` | read/write | Нет |
-| 13 | Котировки (WS) | WS | тот же `market-data/ws`, `dataType=3` | read/write | Нет |
-| 14 | Обезличенные сделки (WS) | тот же `market-data/ws`, `dataType=2` | WS | read/write | Нет |
-| 15 | Последняя свеча (WS) | тот же `market-data/ws`, `dataType=1` | WS | read/write | Нет |
-| 16 | Исторические свечи | GET | `https://be.broker.ru/trade-api-market-data-connector/api/v1/candles-chart` | read/write | Нет |
-| 17 | Поиск инструмента по тикерам | POST | `https://be.broker.ru/trade-api-information-service/api/v1/instruments/by-tickers` | read/write | Нет |
-| 18 | Поиск инструмента по типу | GET | `https://be.broker.ru/trade-api-information-service/api/v1/instruments/by-type` | read/write | Нет |
-| 19 | Расписание инструмента | GET | `https://be.broker.ru/trade-api-information-service/api/v1/trading-schedule/daily-schedule` | read/write | Нет |
-| 20 | Торговый статус инструмента | GET | `https://be.broker.ru/trade-api-information-service/api/v1/trading-schedule/status` | read/write | Нет |
-| 21 | Маржинальные показатели (WS) | WS | `wss://ws.broker.ru/trade-api-bff-marginal-indicators/api/v1/marginal-indicators/ws` | read/write | Нет |
-| 22 | Дисконты | GET | `https://be.broker.ru/trade-api-bff-marginal-indicators/api/v1/instruments-discounts` | read/write | Нет |
+| 6 | Список активных заявок | GET | `.../trade-api-bff-operations/api/v1/orders` | read/write | Нет |
+| 7 | Поиск заявок | POST | `.../trade-api-bff-operations/api/v1/orders/search` | read/write | Нет |
+| 8 | Создать заявку | POST | `.../trade-api-bff-operations/api/v1/orders` | **write** | Нет |
+| 9 | Отменить заявку | POST | `.../trade-api-bff-operations/api/v1/orders/cancel` | **write** | Нет |
+| 10 | Изменить заявку | POST | `.../trade-api-bff-operations/api/v1/orders/edit` | **write** | Нет |
+| 11 | Статус заявки | GET | `.../trade-api-bff-operations/api/v1/orders/{originalClientOrderId}` | read/write | Нет |
+| 12 | Создать заявку (Sync) | POST | `.../trade-api-bff-operations/api/v1/orders/sync` | **write** | Нет |
+| 13 | Отменить заявку (Sync) | POST | `.../trade-api-bff-operations/api/v1/orders/cancel/sync` | **write** | Нет |
+| 14 | Изменить заявку (Sync) | POST | `.../trade-api-bff-operations/api/v1/orders/edit/sync` | **write** | Нет |
+| 15 | Статус заявок (WS, новый) | WS | `wss://ws.broker.ru/trade-api-bff-operations/api/v1/orders/events/ws` | write | Нет |
+| 16 | Сделки (история) | POST | `.../trade-api-bff-operations/api/v1/trades/search` | read/write | Нет |
+| 17 | Неторговые операции | POST | `.../trade-api-bff-operations/api/v1/operations/search` | read/write | Нет |
+| 18 | Исторические свечи | GET | `.../trade-api-market-data-connector/api/v1/candles-chart` | read/write | Нет |
+| 19 | Обезличенные сделки | POST | `.../trade-api-market-data-connector/api/v1/last-trades` | read/write | Нет |
+| 20 | Стакан | GET | `.../trade-api-market-data-connector/api/v1/order-book` | read/write | Нет |
+| 21 | Котировки | POST | `.../trade-api-market-data-connector/api/v1/quotes` | read/write | Нет |
+| 22 | Market Data (WS) | WS | `wss://ws.broker.ru/trade-api-market-data-connector/api/v1/market-data/ws` | read/write | Нет |
+| 23 | Инструменты по ISIN | POST | `.../trade-api-information-service/api/v1/instruments/by-isins` | read/write | Нет |
+| 24 | Инструменты по тикерам | POST | `.../trade-api-information-service/api/v1/instruments/by-tickers` | read/write | Нет |
+| 25 | Инструменты по типу | GET | `.../trade-api-information-service/api/v1/instruments/by-type` | read/write | Нет |
+| 26 | Расписание на день | GET | `.../trade-api-information-service/api/v1/trading-schedule/daily-schedule` | read/write | Нет |
+| 27 | Статусы торговли | GET | `.../trade-api-information-service/api/v1/trading-schedule/status` | read/write | Нет |
+| 28 | Марж. показатели (WS) | WS | `wss://ws.broker.ru/trade-api-bff-marginal-indicators/api/v1/marginal-indicators/ws` | read/write | Нет |
+| 29 | Дисконты по инструментам | GET | `.../trade-api-bff-marginal-indicators/api/v1/instruments-discounts` | read/write | Нет |
 
 ---
 
@@ -57,66 +76,61 @@
 
 ### 2.1 Refresh-токен
 
-- Выпускается вручную пользователем в веб-версии «БКС Мир инвестиций»:
-  *Профиль → Управление счетами → выбрать брокерский счёт → «Токены API» → «Выпустить токен»*.
-- Типы refresh-токенов (права доступа):
-  - **«Для торговли и чтения данных»** — может создавать рыночные/лимитные заявки на Мосбирже + читать всё;
-  - **«Только для чтения»** — анализ цен, портфель, исторические данные; создавать заявки нельзя.
-- Срок жизни refresh-токена: **90 суток**. Токен показывается один раз, система его не хранит.
-- Удаление refresh-токена в веб-версии:
-  - для «только чтение» — выпущенный access-токен живёт до конца своих 24 ч;
-  - для «торговля» — инвалидация access-токенов в течение нескольких минут.
-- Количество одновременных токенов не ограничено; каждый токен привязан к одному счёту.
+- Выпускается вручную в веб-версии «БКС Мир инвестиций»:
+  *Профиль → «Счета и тарифы» → выбрать счёт → «Токены API» → «Выпустить токен»*.
+- Типы (права доступа):
+  - **«Для торговли и чтения данных»** — рыночные/лимитные заявки на Мосбирже + чтение всего;
+  - **«Только для чтения»** — цены, портфель, исторические данные; заявки создавать нельзя.
+- Срок жизни: **90 суток**. Показывается **один раз**, система его не хранит.
+- Удаление refresh-токена:
+  - «только чтение» — выданный access-токен живёт до конца своих 24 ч;
+  - «торговля» — access-токены аннулируются практически мгновенно.
+- Количество одновременных токенов не ограничено; каждый привязан к одному счёту.
 
 ### 2.2 Access-токен
 
-- Получается из refresh-токена запросом ниже (стандартный OAuth2/Keycloak, JWT).
-- Срок жизни access-токена: **24 часа** (`expires_in = 86400`), затем нужно перевыпустить.
-- Используется как `Authorization: Bearer <access_token>` во всех остальных запросах.
+- Получается обменом refresh-токена (ниже). Срок жизни **24 часа** (`expires_in = 86400`).
+- Используется как `Authorization: Bearer <access_token>` во всех остальных запросах,
+  включая handshake WebSocket.
 
 ### 2.3 Endpoint: Получение access-токена
 
 ```
 POST https://be.broker.ru/trade-api-keycloak/realms/tradeapi/protocol/openid-connect/token
 Content-Type: application/x-www-form-urlencoded
+Accept: application/json
 ```
 
-**Запрос (body-параметры, каждый ровно один раз):**
+**Запрос (body-параметры, обязательны все три):**
 
-| Параметр | Где | Тип | Обязат. | Описание |
-|---|---|---|---|---|
-| `client_id` | body | string | да | `"trade-api-read"` — для токена «только чтение»; `"trade-api-write"` — для торгового токена |
-| `refresh_token` | body | string | да | Значение refresh-токена из веб-версии |
-| `grant_type` | body | string | да | Всегда `"refresh_token"` |
+| Параметр | Тип | Описание |
+|---|---|---|
+| `client_id` | enum | `trade-api-read` (токен «чтение») / `trade-api-write` (торговый) |
+| `refresh_token` | string | Значение refresh-токена из веб-версии |
+| `grant_type` | enum | Всегда `refresh_token` |
 
-**Ответ (JSON):**
+**Ответ 200 (JSON):**
 
-| Поле | Тип | Обязат. | Описание |
-|---|---|---|---|
-| `access_token` | string | да | JWT-токен с запрошенными правами |
-| `expires_in` | string* | да | Время жизни access-токена в секундах (всего 24 часа) |
-| `refresh_expires_in` | string* | да | Время жизни refresh-токена (всего 90 суток) |
-| `refresh_token` | string | да | Новый refresh-токен (для обновления пары access/refresh) |
-| `token_type` | string | да | Всегда `"bearer"` |
-| `not-before-policy` | string* | да | UNIX-время, с которого действуют токены (обычно `0` — сразу) |
-| `session_state` | string | да | GUID сессии |
-| `scope` | string | да | Права доступа согласно переданному токену |
+| Поле | Тип | Описание |
+|---|---|---|
+| `access_token` | string | JWT с запрошенными правами |
+| `expires_in` | number | Время жизни access-токена, сек (24 ч) |
+| `refresh_expires_in` | number | Время жизни refresh-токена (90 суток) |
+| `refresh_token` | string | **Новый** refresh-токен (пара access/refresh обновляется) |
+| `token_type` | string | Всегда `bearer` |
+| `not-before-policy` | string | UNIX-время действия токенов (обычно `0`) |
+| `session_state` | string | GUID сессии |
+| `scope` | string | Права доступа согласно переданному токену |
 
-\* В документации тип указан как «Строка»; фактически Keycloak возвращает числа —
-сервер должен парсить оба варианта (число или строка).
+> В swagger `expires_in`/`refresh_expires_in` объявлены как числа; фактический Keycloak
+> может отдавать строки — парсить оба варианта.
 
-> ⚠️ **Важно для сервера:** ответ содержит **новый `refresh_token`**. Рекомендуется
-> ротировать сохранённый refresh-токен (перезаписывать секрет) после каждого обмена,
-> чтобы не потерять доступ.
+**Ответ 400 (Invalid grant):** `{ "error": "invalid_grant", "error_description": "..." }` —
+refresh-токен недействителен/истёк/удалён либо перепутан client_id (read vs write).
 
-**Пример запроса (curl):**
-
-```bash
-curl -X POST https://be.broker.ru/trade-api-keycloak/realms/tradeapi/protocol/openid-connect/token \
-  -d "client_id=trade-api-read" \
-  -d "grant_type=refresh_token" \
-  --data-urlencode "refresh_token=<REFRESH_TOKEN>"
-```
+> ⚠️ **Ротация:** ответ содержит новый `refresh_token`. Сохранять/перезаписывать его после
+> каждого обмена (в MVP токен живёт в браузере пользователя и возвращается ему через поле
+> `rotatedRefreshToken` ответа адаптера).
 
 ---
 
@@ -127,113 +141,108 @@ curl -X POST https://be.broker.ru/trade-api-keycloak/realms/tradeapi/protocol/op
 ```
 GET https://be.broker.ru/trade-api-bff-portfolio/api/v1/portfolio
 Authorization: Bearer <access_token>
+Accept: application/json
 ```
 
-Параметры запроса: только заголовок `Authorization` (string, обязателен).
-Query/path-параметров нет. Доступен и токеном «только чтение».
+Параметров нет. Доступен токеном «только чтение».
 
-Альтернативный транспорт (тот же сервис, стриминг обновлений портфеля):
+Альтернативный транспорт (стриминг обновлений портфеля, тот же сервис):
 
 ```
 wss://ws.broker.ru/trade-api-bff-portfolio/api/v1/portfolio/ws
 Authorization: Bearer <access_token>   (заголовок при handshake)
 ```
 
-### 3.2 Ответ: структура
+### 3.2 Ответ: структура (АКТУАЛЬНЫЙ КОНТРАКТ)
 
-> ⚠️ **АКТУАЛЬНО (проверено по swagger на trade-api.bcs.ru/http/authorization):**
-> корень ответа — **голый JSON-массив позиций** `[ {...}, ... ]`, без обёртки
-> `{ positions: [...] }`. Поля переименованы: `currentUserValueRub/Usd/Eur` →
-> `currentValueRub/currentValueUsd/currentValueEur`; `subAccountId` и `agreementId`
-> помечены `deprecated`; `type` ∈ `moneyLimit | depoLimit | futuresLimit |
-> futuresHolding | otcLimit`; `upperType` ∈ `CURRENCY | RUSSIA | FOREIGN | OTC`.
-> Ошибки (429 и др.) — объект `{ timestamp, traceId, type, errors[], displayOptions }`.
-> Адаптер поддерживает оба формата (см. `normalizeBcsPortfolioResponse`). Ниже —
-> историческое описание из PDF.
-
-Корень ответа — объект с единственным контейнером:
-
-| Поле | Тип | Обязат. | Описание |
-|---|---|---|---|
-| `positions` | array | да | Позиции в портфеле (по одному брокерскому счёту, к которому привязан токен) |
-
-Элемент массива `positions[]` — объект со следующими полями (**все поля обязательны**):
+Корень ответа 200 — **голый JSON-массив** объектов `Portfolio` (без обёртки
+`{ positions: [...] }` из старого PDF). Схема элемента (title `Portfolio`):
 
 | Поле | Тип | Описание |
 |---|---|---|
-| `type` | string | Тип позиции |
-| `subAccountId` | string | id субсчета |
-| `agreementId` | string | id генерального соглашения (совпадает с номером брокерского счёта) |
-| `account` | string | Торговый счёт |
-| `exchange` | string | Биржа |
-| `ticker` | string | Биржевой тикер инструмента |
+| `type` | enum | Тип позиции: `moneyLimit` \| `depoLimit` \| `futuresLimit` \| `futuresHolding` \| `otcLimit` |
+| `subAccountId` | uuid | ID субсчета — **deprecated** |
+| `agreementId` | uuid | ID генерального соглашения — **deprecated** |
+| `account` | string | Торговый счет |
+| `exchange` | string | Код биржи |
+| `ticker` | string | Тикер инструмента |
 | `displayName` | string | Наименование инструмента |
 | `baseAssetTicker` | string | Тикер базового актива |
 | `currency` | string | Валюта цены |
-| `expireDate` | date | Дата экспирации |
-| `upperType` | string | Верхнеуровневый тип инструмента |
+| `upperType` | enum | Верхнеуровневый тип: `CURRENCY` \| `RUSSIA` \| `FOREIGN` \| `OTC` |
 | `instrumentType` | string | Тип инструмента |
-| `term` | string | Тип лимита (T0/T1/T2/T365) |
+| `term` | enum | Срок расчётов: `T0` \| `T1` \| `T2` \| `T365` |
 | `quantity` | number | Количество (шт.) |
-| `locked` | number | Кол-во активов, занятых под активные заявки или ГО |
-| `balancePrice` | number | Балансовая цена (цена открытия позиции) в валюте цены |
+| `locked` | number | Занято под активные заявки или ГО |
+| `balancePrice` | number | Балансовая цена в валюте цены |
 | `currentPrice` | number | Текущая цена |
 | `balanceValue` | number | Балансовая стоимость в валюте цены |
 | `balanceValueRub` | number | Балансовая стоимость в рублях |
 | `balanceValueUsd` | number | Балансовая стоимость в долларах |
 | `balanceValueEur` | number | Балансовая стоимость в евро |
 | `currentValue` | number | Текущая стоимость в валюте цены |
-| `currentUserValueRub` | number | Текущая стоимость в рублях |
-| `currentUserValueUsd` | number | Текущая стоимость в долларах |
-| `currentUserValueEur` | number | Текущая стоимость в евро |
-| `unrealizedPL` | number | Нереализованный P/L (изменение цены с момента открытия позиции) |
-| `unrealizedPercentPL` | number | Нереализованный P/L, % |
-| `dailyPL` | number | Дневное изменение цены с момента открытия позиции |
+| `currentValueRub` | number | Текущая стоимость в рублях *(было `currentUserValueRub`)* |
+| `currentValueUsd` | number | Текущая стоимость в долларах *(было `currentUserValueUsd`)* |
+| `currentValueEur` | number | Текущая стоимость в евро *(было `currentUserValueEur`)* |
+| `unrealizedPL` | number | Изменение цены с момента открытия позиции |
+| `unrealizedPercentPL` | number | То же, % |
+| `dailyPL` | number | Дневное изменение |
 | `dailyPercentPL` | number | Дневное изменение, % |
-| `portfolioShare` | number | Доля в портфеле, % (от рублевой стоимости портфеля) |
-| `scale` | number | Количество знаков (точность цены) |
+| `portfolioShare` | number | Доля в портфеле, % (от рублевой стоимости) |
+| `scale` | int32 | Количество знаков |
 | `minimumStep` | number | Минимальный шаг цены |
-| `board` | string | Код класса ценной бумаги (борд, напр. `TQBR`; см. Boards API Мосбиржи) |
-| `priceUnit` | number | Единица цены |
-| `faceValue` | number | Номинал (для облигаций) |
-| `accruedIncome` | number | НКД — накопленный купонный доход (для облигаций) |
+| `board` | string | Код класса ценной бумаги (напр. `TQBR`) |
+| `priceUnit` | string | Единица цены |
+| `faceValue` | number | Номинал (облигации) |
+| `accruedIncome` | number | НКД (облигации) |
+| `logoLink` | string | Ссылка на логотип |
+| `isBlocked` | boolean | Признак блокированного класса |
 | `isBlockedTradeAccount` | boolean | Заблокирован ли торговый счёт |
 | `lockedForFutures` | number | Занято под ГО по фьючерсам |
-| `isBlocked` | boolean | Деньги, занятые в активных заявках или под ГО |
 | `ratioQuantity` | number | Количество в лоте |
-| `logoLink` | string | Ссылка на логотип (может быть пустой строкой) |
+| `expireDate` | string | Дата экспирации |
 
-*(примечание: в исходной таблице документации поля текущей стоимости называются
-`currentUserValueRub` / `currentUserValueUsd` / `currentUserValueEur`; в TS-модели
-безопасно объявлять их опциональными fallback'ами, если реальный ответ придёт с другими
-именами — проверить на живом API.)*
+Деньги определяются по `type == "moneyLimit"` (или `upperType == "CURRENCY"`); у денежной
+строки `quantity` — сумма в валюте цены.
 
 ### 3.3 Ошибки endpoint'а «Портфель»
 
-| HTTP код | Текстовый код | Описание |
+Документированный ответ ошибки (429 и другие 4xx/5xx) — объект `ErrorResponse`:
+
+```json
+{
+  "timestamp": 0,
+  "traceId": "string",
+  "type": "VALIDATION_ERROR | RESOURCE_EXHAUSTED | USER_BLOCKED | BAD_REQUEST | NOT_FOUND | UNAUTHORIZED | FORBIDDEN | CONFLICT | INTERNAL_SERVER_ERROR | SESSION_NOT_FOUND_ERROR | SESSION_EXPIRED_ERROR | SESSION_FAILED_ERROR",
+  "errors": [ { "type": "string", "field": "string", "payload": {} } ],
+  "displayOptions": {}
+}
+```
+
+| HTTP | type | Смысл для адаптера |
 |---|---|---|
-| 401 | `UNAUTHORIZED` | Пользователь не авторизован |
-| 400 | `VALIDATION_ERROR` | Ошибка валидации |
-| 404 | `NOT_FOUND` | Данные не найдены |
-| 5xx | `INTERNAL_SERVER_ERROR` | Внутренняя серверная ошибка |
+| 401 | `UNAUTHORIZED` | access отклонён → переобмен refresh, 1 retry |
+| 429 | `RESOURCE_EXHAUSTED` | rate limit → UPSTREAM_RATE_LIMIT, backoff |
+| прочее 4xx/5xx | см. enum | пробросить статус и `type`/traceId в логи |
 
 ### 3.4 Целевой поток MVP-сервера
 
 ```
-[Хранимый refresh_token]
+[refresh_token в браузере пользователя]
         │  POST keycloak token (client_id=trade-api-read, grant_type=refresh_token)
         ▼
 [access_token (24ч)] ──кэш, обновление по expires_in / при 401──┐
         │  GET /trade-api-bff-portfolio/api/v1/portfolio         │
         ▼                                                        │
-[positions[]] → нормализация → отдаём в собственный веб-клиент ◄─┘
-   (REST-поллинг; позже — WS wss://.../portfolio/ws)
+[Portfolio[] (голый массив)] → normalizePortfolio → UnifiedPortfolio → web-client ◄┘
+   (REST-поллинг; позже — WS .../portfolio/ws)
 ```
 
 Правила для сервера:
-1. Refresh-токен хранить только на сервере (никогда не отдавать клиенту).
-2. Кэшировать access-токен; при истечении (`expires_in`) или ответе 401 — переобмен и повтор запроса (1 retry).
-3. После обмена сохранять присланный в ответе новый `refresh_token`.
+1. Refresh-токен не хранится на сервере (MVP: живёт в браузере, проксируется заголовком
+   `X-Broker-Refresh-Token`); ротированный возвращается клиенту в `rotatedRefreshToken`.
+2. Кэшировать access-токен; при истечении или 401 — переобмен и повтор запроса (1 retry).
+3. После обмена сохранять присланный новый `refresh_token`.
 4. Для MVP достаточно прав «только чтение» (`client_id=trade-api-read`).
 
 ---
@@ -242,317 +251,141 @@ Authorization: Bearer <access_token>   (заголовок при handshake)
 
 ```
 GET https://be.broker.ru/trade-api-bff-limit/api/v1/limits
-Authorization: Bearer <access_token>
-
 WS: wss://ws.broker.ru/trade-api-bff-limit/api/v1/limits/ws
 ```
 
-Запрос: только заголовок `Authorization`. Доступен токеном «только чтение».
+Корень 200 — объект с контейнерами `depoLimit[]`, `futureHolding[]`, `moneyLimits[]`,
+`futuresLimits[]` (схема совпадает со старой §4 PDF; ключи денег/лимитов ФОРТС —
+во множественном числе: `moneyLimits`, `futuresLimits`). Основные поля:
 
-### 4.1 Структура ответа
-
-Корень содержит 4 контейнера: `depoLimit`, `futureHolding`, `moneyLimit`, `futuresLimit`.
-
-#### `depoLimit` — акции, облигации, валюты в портфеле
-
-| Поле | Тип | Обязат. | Описание |
-|---|---|---|---|
-| `ticker` | string | нет | Тикер инструмента |
-| `classCode` | string | нет | Код борда (напр. `TQBR`) |
-| `exchange` | enum | да | Биржа: `MOEX` (Мосбиржа) |
-| `averagePrice` | float | нет | Средневзвешенная цена открытия позиции |
-| `quantity` | object | нет | Количество в **штуках**; содержит `type` и `value` |
-| `quantity.type` | string | нет | Режим расчётов: `T0`, `T1`, `T2`, `T365` … |
-| `quantity.value` | float | нет | Количество штук с учётом значения T |
-| `quantityBatch` | object | нет | Количество в **лотах** (8 знаков после запятой); содержит `type` и `value` |
-| `quantityBatch.type` | string | нет | `T0`, `T1`, `T2`, `T365` … |
-| `quantityBatch.value` | float | нет | Количество лотов с учётом значения T |
-| `instrumentType` | string | да | Тип инструмента (акция, облигация…) |
-| `loadDate` | date-time | нет | Время обновления данных, ISO 8601 (`2024-10-30T09:01:00.000Z`) |
-| `lockedBuyValue` | float | нет | Деньги в активных заявках на покупку данной бумаги |
-| `lockedSellValue` | float | нет | Деньги в активных заявках на продажу данной бумаги |
-
-#### `futureHolding` — позиции срочного рынка
-
-| Поле | Тип | Обязат. | Описание |
-|---|---|---|---|
-| `ticker` | string | нет | Тикер инструмента |
-| `classCode` | string | нет | Код борда |
-| `exchange` | enum | да | `MOEX` |
-| `cbplPlanned` | float | нет | Стоимостная оценка планируемых позиций после ближайшего клиринга |
-| `varMargin` | float | нет | Оценка размера вариационной маржи по позициям |
-| `positionValue` | float | нет | Стоимость позиций срочного рынка |
-| `totalNet` | float | нет | Текущие чистые позиции |
-| `executionDate` | date-time | нет | Дата исполнения, ISO 8601 |
-| `totalVarMargin` | float | нет | Суммарная вар. маржа по итогам основного клиринга |
-| `realVarMargin` | float | нет | Начисленная в ходе клиринга вар. маржа |
-| `averagePrice` | float | нет | Средневзвешенная цена приобретения позиции |
-| `instrumentType` | string | да | Тип инструмента |
-| `tradeDate` | date-time | нет | Дата торговой сессии, ISO 8601 |
-
-#### `moneyLimit` — деньги
-
-| Поле | Тип | Обязат. | Описание |
-|---|---|---|---|
-| `exchange` | enum | да | Биржа |
-| `currencyCode` | string(4) | нет | Код валюты |
-| `locked` | float | нет | Деньги, занятые в активных заявках |
-| `averagePrice` | float | нет | Средневзвешенная цена открытия позиции |
-| `instrumentType` | string | да | Константа = `"money"` |
-| `quantity` | object | нет | Содержит `type` (`T0`,`T1`,`T2`,`T365`) и `value` (float) |
-| `loadDate` | date-time | нет | Дата загрузки, ISO 8601 |
-
-#### `futuresLimit` — лимиты ФОРТС
-
-| Поле | Тип | Обязат. | Описание |
-|---|---|---|---|
-| `currencyCode` | string(4) | нет | Код валюты |
-| `exchange` | enum | да | Биржа |
-| `accruedInt` | float | нет | Вариационная маржа на текущий день |
-| `cbpl.init` | float | нет | Текущий лимит открытых позиций |
-| `cbplUsed` | float | нет | Позиции после последнего клиринга |
-| `cbp1Planned` | float | нет | Оценка планируемых позиций после ближайшего клиринга |
-| `cbplusedForOrders` | float | нет | ГО, зарезервированное под клиентские заявки |
-| `cbplusedForPositions` | float | нет | ГО, зарезервированное под открытые позиции |
-| `optionsPremium` | float | нет | Премии по опционам |
-| `instrumentType` | string | да | Константа = `"money"` |
-| `loadDate` | date-time | нет | Дата загрузки, ISO 8601 |
-| `varMargin` | float | нет | Оценка размера вар. маржи по позициям |
-| `realVarMargin` | float | нет | Начисленная в ходе клиринга вар. маржа |
-
-Ошибки: `401 UNAUTHORIZED`, `5xx INTERNAL_SERVER_ERROR`.
+- `depoLimit[]`: `ticker`, `classCode`, `exchange`, `averagePrice`,
+  `quantity{type,value}` (штуки), `quantityBatch{type,value}` (лоты), `instrumentType`,
+  `loadDate`, `lockedBuyValue`, `lockedSellValue`, `lockedBuyQuantity`, `lockedSellQuantity`.
+- `futureHolding[]`: `ticker`, `classCode`, `exchange`, `cbplPlanned`, `varMargin`,
+  `positionValue`, `totalNet`, `executionDate`, `totalVarMargin`, `realVarMargin`,
+  `averagePrice`, `instrumentType`, `tradeDate`.
+- `moneyLimits[]`: `exchange`, `currencyCode`, `locked`, `averagePrice`, `instrumentType`,
+  `quantity{type,value}`, `loadDate`.
+- `futuresLimits[]`: `currencyCode`, `exchange`, `accruedint`, `cbpLimit`, `cbplUsed`,
+  `cbplPlanned`, `cbplUsedForOrders`, `cbplUsedForPositions`, `optionsPremium`,
+  `instrumentType`, `loadDate`, `varMargin`, `realVarMargin`.
 
 ---
 
-## 5. Справочно (вне MVP): торговые операции
+## 5. Справочно (вне MVP): торговые операции (write-токен)
 
-### 5.1 Создание торговой заявки (только права «для торговли»)
+Сервис `trade-api-bff-operations`. Актуальные методы:
 
-```
-POST https://be.broker.ru/trade-api-bff-operations/api/v1/orders
-Authorization: Bearer <access_token>
-```
-
-Тело (JSON):
-
-| Поле | Тип | Обязат. | Описание |
-|---|---|---|---|
-| `clientOrderId` | UUID | да | Генерируется клиентом; защита от дублей |
-| `side` | enum | да | `1` — покупка, `2` — продажа |
-| `orderType` | enum | да | `1` — рыночная, `2` — лимитная |
-| `orderQuantity` | int > 0 | да | Количество активов, шт. |
-| `ticker` | string | да | Тикер бумаги |
-| `classCode` | string | да | Код борда (напр. `TQBR`) |
-| `price` | float | только для лимитных | > 0, дробное, ≤ 8 знаков после запятой |
-
-Успешный ответ: `{ "clientOrderId": UUID, "status": string }`.
-Ошибки: 401 `UNAUTHORIZED`, 404 `NOT_FOUND`, 400 `VALIDATION_ERROR` / `BAD_REQUEST`, 5xx.
-
-### 5.2 Изменение заявки
-
-```
-POST .../orders/{originalClientOrderId}
-```
-
-Тело: `clientOrderId` (новый UUID), `price` (float > 0, ≤ 8 знаков), `orderQuantity` (int > 0),
-`classCode` (string). Технически = отмена старой + создание новой.
-Ответ: `{ clientOrderId, status }`. Ошибки те же.
-
-### 5.3 Отмена заявки
-
-```
-POST .../orders/{originalClientOrderId}/cancel
-```
-
-Тело: `clientOrderId` (новый UUID). Ответ: `{ clientOrderId, status }`.
-
-### 5.4 Статус заявки
-
-```
-GET .../orders/{originalClientOrderId}
-```
-
-Ответ: `originalClientOrderId`, `clientOrderId`, `data` (контейнер, `null` при ошибке) c полями:
-
-`orderStatus` (enum: 0 new, 1 partially filled, 2 filled, 4 canceled, 5 replaced,
-6 pending cancel, 8 rejected, 9 pending replace, 10 pending new), `orderQuantity`,
-`executedQuantity`, `lastQuantity`, `remainedQuantity`, `ticker`, `classCode`,
-`side` (1/2), `orderType` (1/2), `averagePrice`, `orderId`, `executionId`, `price`
-(стоп-заявки → 0; репо/спреды — цена первой части), `currency`, `clientCode`,
-`transactionTime` (ISO 8601), `tradeDate`, `orderNumber`, `accruedCoupon`,
-`executionValue`, `commission`, `securityExchange`,
-`rejectReason` (0 too late to cancel, 1 unknown order, 2 broker option,
-3 already in pending state).
-
-### 5.5 Стриминг заявок (WS, write-токен)
-
-- Обновления статусов созданных заявок: `wss://ws.broker.ru/trade-api-bff-operations/api/v1/orders/transaction/ws`
-- Исполненные заявки: `wss://ws.broker.ru/trade-api-bff-operations/api/v1/orders/execution/ws`
-
-Запрос: заголовок `Authorization`. Сообщение — тот же формат, что `data` статуса заявки
-(`originalClientOrderId`, `clientOrderId`, `data{...}`).
-
-⚠️ Особенность: если стриминг открыт **до** создания заявки — данные попадут в стрим;
-если заявка создана до открытия стрима — статус узнаётся только REST-запросом.
+- `POST /api/v1/orders` — создать заявку; `POST /api/v1/orders/sync` — синхронная версия.
+- `POST /api/v1/orders/cancel` — отмена по идентификатору (поддерживаются статусы 0, 1, 5, 10);
+  `POST /api/v1/orders/cancel/sync` — синхронная версия.
+- `POST /api/v1/orders/edit` — изменение; `POST /api/v1/orders/edit/sync` — синхронная версия.
+- `GET /api/v1/orders` — список активных заявок; `POST /api/v1/orders/search` — поиск заявок;
+  `GET /api/v1/orders/{originalClientOrderId}` — статус заявки.
+- WS статусов заявок (актуальный канал): `wss://ws.broker.ru/trade-api-bff-operations/api/v1/orders/events/ws`.
+- История сделок: `POST /api/v1/trades/search` — только сделки начиная с **26.01.2026**,
+  не более **1000** последних.
+- Неторговые операции: `POST /api/v1/operations/search` — лимит **3 RPS**.
 
 ---
 
 ## 6. Справочно (вне MVP): market data
 
-Единый WS-эндпоинт подписок: `wss://ws.broker.ru/trade-api-market-data-connector/api/v1/market-data/ws`
-(+ `Authorization: Bearer`). После подключения клиент отправляет JSON-сообщение подписки:
+Сервис `trade-api-market-data-connector`:
 
-| Поле | Тип | Описание |
-|---|---|---|
-| `subscribeType` (`subscriberType` в разделах сделок/свечей) | enum | `0` — Subscribe, `1` — Unsubscribe |
-| `dataType` | enum | `0` — стакан, `1` — последняя свеча, `2` — обезличенные сделки, `3` — котировки |
-| `instruments` | array | список `{ ticker: string, classCode: string }` |
-| `depth` | int | только стакан: 1–20, по умолчанию 20 |
-| `timeFrame` | enum | только последняя свеча: M1…M60 |
-
-**Стакан (ответ):** `responseType` (`OrderBook` / `OrderBookSuccess`), `subscribeType`,
-`depth`, `dateTime`, `ticker`, `classCode`, `bidVolume`, `askVolume`,
-`bids[]{price, quantity}` (по убыванию), `asks[]{price, quantity}` (по возрастанию),
-`error{message, code}` (code: 0 Undefined, 1 NoData, 2 NotFound, 3 InvalidJson).
-
-**Котировки (ответ):** `responseType="quotes"`, `ticker`, `classCode`, `dateTime`, `type`,
-`securityTradingStatus` (2 Trading Hall, 17 Ready to trade, 18 Not available, 100 Closing,
-101 Opening, 102 Auction, 103 Closing Auction), `currency`, `bid`, `offer`, `open`,
-`close`, `high`, `low`, `theoreticalPrice`, `last`, `butYield`, `otherYield`, `change`,
-`changeRate`.
-
-**Обезличенные сделки (ответ):** `responseType` (`LastTrades` / `LastTradesSuccess`),
-`subscriberType`, `ticker`, `classCode`, `dateTime`, `side`, `price`, `volume`,
-`quantity`, `error{message, code(0..3)}`.
-
-**Последняя свеча (ответ):** `requested` (UUID), `responded` (UUID),
-`instrument{code, exchange}`, `subscribeResponse{subscribeType, timeFrame, dateTimeUtc}`,
-`candleStick{dateTimeUtc, timeFrame, open, close, high, low, volume}`,
-`error{message, code}` (13 INTERNAL / 16 UNAUTHENTICATED — коды gRPC-стиля).
-
-**Исторические свечи (HTTP):**
-
-```
-GET https://be.broker.ru/trade-api-market-data-connector/api/v1/candles-chart
-    ?classCode=TQBR&ticker=SBER&startDate=...&endDate=...&timeFrame=D
-```
-
-Query: `classCode`, `ticker`, `startDate`, `endDate` (ISO 8601),
-`timeFrame` ∈ {M1,M5,M15,M30,H1,H4,D,W,MN}. Ответ: `classCode`, `ticker`, `startDate`,
-`endDate`, `timeframe`, `bars[]{time, open, high, low, close, volume}`.
-Ошибки: 401, 404, 400 (`BAD_REQUEST`/`VALIDATION_ERROR`), 5xx.
+- `GET /api/v1/candles-chart` — исторические свечи; максимум **1440 баров** на запрос
+  (при превышении — ошибка; дробите интервал или укрупняйте `timeFrame`).
+- `POST /api/v1/last-trades` — обезличенные сделки; `GET /api/v1/order-book` — стакан;
+  `POST /api/v1/quotes` — текущие котировки.
+- WS (единый коннектор): `wss://ws.broker.ru/trade-api-market-data-connector/api/v1/market-data/ws`
+  — каналы: последняя свеча, стакан, котировки (`dataType=3`), обезличенные сделки
+  (`dataType=2`), подписки ≤ 100 инструментов на соединение.
 
 ---
 
 ## 7. Справочно (вне MVP): information service
 
-### 7.1 Поиск инструмента по тикерам
+Сервис `trade-api-information-service`:
 
-```
-POST https://be.broker.ru/trade-api-information-service/api/v1/instruments/by-tickers
-Body: { "tickers": ["SBER", ...] }
-```
-
-Ответ: `instruments[]` — расширенная карточка инструмента: `ticker`, `boards[]{classCode,
-exchange}`, `shortName`, `isin`, `registrationCode`, `issuerName`, `instrumentType`,
-`tradingCurrency`, `displayName`, `displayNameSecond`, `currencyStepPrice`, `settleCode`,
-`faceValue`, `type`, `scale`, `minimumStep`, `stepPrice`, `accruedint`, `cfi`,
-`isQualifiedOnly`, `isCanShort`, `availableForUnqualified`, `qualifiedTestId`,
-`qualifiedTestIdTm`, `complexProduct`, `isBcsProduct`, `currencyNominal`,
-`couponsPerYear`, `couponRate`, `nextCoupon`, `baseAsset`, `lotSize`, `maturityDate`,
-`logoLink`, `baseAssetFuture`, `subType`, `percentTargetCurrent`, `businessSector`,
-`mktcap`, `peNorm`, `priceTangible`, `epsGrowthRate`, `predictedDps`, `dividendYield`,
-`priceChangeYear`, `targetPrice`, `businessSectorId`, `isBlocked`, `primaryBoard`,
-`secondaryBoards[]`, `isCanMargin`, `emissionDate`, `isReplacementBond`, `subTitle`,
-`couponTypeName`, `excludeTypeFlags`, `excludeTypes[]`, `creditRating`,
-`liquidityRating`, `bcsScore`, `bcsScoreColor`, `nrdCode`, `businessCountry`,
-`businessCountryCode`, `priceChangeHalfYear`, `priceChangeMonth`,
-`priceChangeEarlyYear`, `strike`, `baseAssetSecuritySecCode`,
-`baseAssetSecurityClassCode`, `firstCurrCode`, `amortisedMty`, `settlementCurrency`,
-`settlementDate`, `promoIdx`.
-
-### 7.2 Поиск инструмента по типу
-
-```
-GET https://be.broker.ru/trade-api-information-service/api/v1/instruments/by-type?type=STOCK&baseAssetTicker=...
-```
-
-Query: `type` (обязат.), `baseAssetTicker` (обязат. при `type=OPTIONS`).
-Типы: `CURRENCY, STOCK, FOREIGN_STOCK, BONDS, NOTES, DEPOSITARY_RECEIPTS, EURO_BONDS,
-MUTUAL_FUNDS, ETF, FUTURES, OPTIONS, GOODS, INDICES`. Ответ — тот же `instruments[]`.
-
-### 7.3 Расписание инструмента
-
-```
-GET .../trade-api-information-service/api/v1/trading-schedule/daily-schedule?classCode=TQBR&ticker=SBER
-```
-
-(ticker регистрозависимый; если не найден — расписание по classCode).
-Ответ: `isWorkingDay` (bool), `dailySchedule[]{startDate, endDate, tradingSessionType,
-tradingSessionStatus: OPEN/CLOSE}`.
-
-### 7.4 Торговый статус инструмента
-
-```
-GET .../trade-api-information-service/api/v1/trading-schedule/status?classCode=TQBR
-```
-
-Ответ: `tradingSessionType`, `tradingSessionStatus` (OPEN/CLOSE),
-`tradingSessionTypeID` (number), `nextSessionDate` (`2021-01-19T09:41:03`).
+- `POST /api/v1/instruments/by-isins`, `POST /api/v1/instruments/by-tickers`,
+  `GET /api/v1/instruments/by-type` — справочник инструментов (`Instrument`: `ticker`,
+  `boards[{classCode,exchange}]`, `isin`, `type/instrumentType` ∈ `CURRENCY, STOCK,
+  FOREIGN_STOCK, BONDS, NOTES, DEPOSITARY_RECEIPTS, EURO_BONDS, MUTUAL_FUNDS, ETF, FUTURES,
+  OPTIONS, GOODS, INDICES`, `lotSize`, `scale`, `minimumStep`, …; `promoIdx`, `logoLink`,
+  `cfi` — deprecated).
+- `GET /api/v1/trading-schedule/daily-schedule` — расписание на день
+  (`isWorkDay`, `dailySchedule[{startDate,endDate,tradingSessionType,tradingSessionStatus}]`).
+- `GET /api/v1/trading-schedule/status` — текущий торговый статус
+  (`tradingSessionStatus: OPEN|CLOSE`, `nextSessionDate`).
 
 ---
 
 ## 8. Справочно (вне MVP): маржинальные показатели и дисконты
 
-### 8.1 Маржинальные показатели (только WS)
+Сервис `trade-api-bff-marginal-indicators`:
 
-```
-wss://ws.broker.ru/trade-api-bff-marginal-indicators/api/v1/marginal-indicators/ws
-Authorization: Bearer <access_token>
-```
-
-Сообщение-ответ (ключевые контейнеры):
-
-- `agreementData{ number, isIia, displayName, subaccountId, color }` — данные счёта.
-- `portfolioCurrentValue{ currentValueRub, dailyPortfolioChangeRub,
-  dailyPortfolioChangePerc, totalPortfolioChangeRub, totalPortfolioChangePerc,
-  collateralAvailable, varMargin }` — стоимость и финансовый результат.
-- `portfolioStability{ isMarginOn, borrowedFunds, stabilityStatusId (0–5),
-  stabilityStatusName (Принудительное закрытие(0)/Маржин-колл(1)/Низкая(2)/Средняя(3)/
-  Высокая(4)/Максимальная(5)), refillSum }`.
-- `fortsStability{ ownFunds, freeCash, stabilityStatusId, stabilityStatusName, refillSum,
-  fortsMarginCall, fortsForcedClosure, riskLevel (0–4: не указан/КНУР/КСУР/КПУР/КОУР) }`.
-- `marginParameters{ marginValue, collateral, marginCall, forcedClosure }` — приходит всегда.
-- `cashByCurrency[]{ currency, sum }` — свободные деньги по валютам.
-- `moneyDebt{ totalMoneyDebt, debtByCurrency[]{currency, sum} }`.
-- `marginSecurities{ totalMarginSecurity, marginBySecurity[]{ticker, board, displayName,
-  logoLink, quantity, currentValue, currency, discount} }` — шорты.
-- `futuresParameters{ futuresValue, futuresPortfolio[]{ticker, board, currentValue,
-  balanceValue, futuresCollateral, discount, displayName, logoLink} }`.
-
-Ошибки: 401, 400 `BAD_REQUEST`, 404, 5xx.
-
-### 8.2 Дисконты
-
-```
-GET https://be.broker.ru/trade-api-bff-marginal-indicators/api/v1/instruments-discounts
-```
-
-Ответ — массив `{ ticker: string, discountLong: double, discountShort: double }`.
-Ошибки: 401, 5xx.
+- WS: `wss://ws.broker.ru/trade-api-bff-marginal-indicators/api/v1/marginal-indicators/ws`
+  — ГО, вармаржа, уровень риска, задолженности, устойчивость счёта.
+- `GET /api/v1/instruments-discounts` — ставки дисконтов (`ticker`, `discountLong`, `discountShort`).
 
 ---
 
-## 9. Прочие правила и замечания
+## 9. Ограничения (rate limits)
 
-- **Жизненный цикл токенов:** refresh 90 дней → перевыпустить в веб-версии заранее;
-  access 24 часа → автоматический обмен на сервере.
-- **Каждый обязательный параметр передаётся ровно один раз.**
-- Формат дат в ответах — ISO 8601 (пример `2024-10-30T09:01:00.000Z`).
-- Новые торговые сутки по фьючерсам — после вечернего клиринга в 19:05; с этого момента
-  «Изменение цены за день» считается заново.
-- `classCode`/`board` — коды площадок Мосбиржи (см. таблицы Boards в документации MOEX
-  API); большинство акций — `TQBR`.
-- Рекомендация по реализации MVP: сервер-агент (хранит refresh-токен, кэширует access),
-  эндпоинт вида `GET /api/portfolio` → прокси `positions[]`, периодический поллинг
-  (например, каждые N секунд в торговую сессию); WS-портфель — следующее улучшение.
+Ограничения задаются отдельно для HTTP и WebSocket; при превышении — **429 Too Many Requests**
+(тело — `ErrorResponse` c `type=RESOURCE_EXHAUSTED`). Рекомендация БКС: обработка 429 и
+повторы с **экспоненциальной задержкой**.
+
+### HTTP (на счёт клиента)
+
+| Сервис | Лимит | Доп. ограничение |
+|---|---|---|
+| Портфель | 10 RPS | — |
+| Лимиты | 10 RPS | — |
+| Справочник (instruments) | 10 RPS | — |
+| Заявки | 10 RPS | 200 000 заявок/сутки |
+| Сделки | 10 RPS | — |
+| Статус заявки | 10 RPS | — |
+| Дисконты | 10 RPS | — |
+| Рыночные данные | 10 RPS | candles-chart ≤ 1440 баров/запрос |
+| Неторговые операции | **3 RPS** | — |
+
+### WebSocket
+
+| Сервис | Соединений | Сообщений/сек от клиента | Подписок в соединении | Объём сообщения |
+|---|---|---|---|---|
+| Портфель | 2 | 10 | — | 8 КБ |
+| Лимиты | 2 | 10 | — | 8 КБ |
+| Заявки | 4 | 10 | — | 8 КБ |
+| Марж. показатели | 2 | 10 | — | 8 КБ |
+| Рыночные данные | 20 | 10 | 100 инструментов | 8 КБ |
+
+Heartbeat: сервер шлёт `ping` каждые 30 с; без `pong` соединение закрывается.
+
+---
+
+## 10. Что изменилось относительно старого контракта (PDF)
+
+1. **Портфель:** корень ответа — голый массив `Portfolio[]` вместо `{ positions: [] }`.
+2. **Переименованы поля:** `currentUserValueRub/Usd/Eur` → `currentValueRub/Usd/Eur`;
+   `priceUnit` теперь string; `subAccountId`/`agreementId` — deprecated (uuid).
+3. **Enum'ы зафиксированы:** `type` ∈ `moneyLimit|depoLimit|futuresLimit|futuresHolding|otcLimit`;
+   `upperType` ∈ `CURRENCY|RUSSIA|FOREIGN|OTC`; `term` ∈ `T0|T1|T2|T365`.
+4. **Заявки:** появились sync-версии (`orders/sync`, `orders/cancel/sync`, `orders/edit/sync`)
+   и новые bulk-методы (`orders/cancel`, `orders/edit`, `orders/search`); старые пути
+   `POST/DELETE /orders/{id}` и `POST /orders/{id}/cancel`, `POST /orders/{id}` (edit) помечены
+   устаревшими.
+5. **WS статуса заявок:** актуальный канал `orders/events/ws`; каналы `orders/execution/ws`
+   и `orders/transaction/ws` — устаревшие.
+6. **История сделок:** отдаются только сделки с 26.01.2026, максимум 1000.
+7. **Свечи:** жёсткое ограничение 1440 баров на запрос.
+8. **Единый ErrorResponse** (`timestamp:int64, traceId, type enum, errors[], displayOptions`)
+   для всех сервисов; Keycloak-ошибка обмена токена — отдельный формат
+   (`error=invalid_grant`).
+9. **MCP:** БКС официально поддерживает подключение LLM-клиентов через MCP-коннектор
+   (`trade-api.bcs.ru/#/mcp`) с refresh-токеном — справочно, наш стек не зависит.
+
+**Правило кода:** адаптер (`apps/bcs-server`) реализует только новый контракт; fallback'ы на
+старый формат удалены. При несовпадении структуры ответа адаптер пишет первые 500 символов
+реального тела в лог (`[bcs-api] portfolio …`) и поднимает `UPSTREAM_UNAVAILABLE` с этим
+фрагментом в details.

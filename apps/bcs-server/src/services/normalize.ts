@@ -1,10 +1,9 @@
 /**
- * Маппинг ответа BCS (positions[]) в UnifiedPortfolio (contracts/broker-api).
+ * Маппинг ответа BCS (Portfolio[] по актуальному контракту BCS-SPEC §3.2)
+ * в UnifiedPortfolio (contracts/broker-api). Старый PDF-контракт не поддерживается.
  */
 import type { BcsPosition, BcsPortfolioResponse } from "../types/bcs.js";
 import type { UnifiedPortfolio, UnifiedPosition, UnifiedAccount } from "../types/unified.js";
-
-const CASH_TYPE = "money"; // верхнеуровневый тип денежной позиции у БКС (уточнить на живом API)
 
 function toInstrumentId(p: BcsPosition): string {
   const ex = (p.exchange || "MOEX").toUpperCase();
@@ -21,19 +20,13 @@ export function normalizePortfolio(raw: BcsPortfolioResponse): UnifiedPortfolio 
   const accounts = new Map<string, UnifiedAccount>();
 
   for (const p of raw.positions ?? []) {
-    // Новый контракт swagger: денежная позиция = type "moneyLimit" / upperType "CURRENCY".
-    const isCash =
-      p.type?.toLowerCase() === "moneylimit" ||
-      p.upperType?.toUpperCase() === "CURRENCY" ||
-      p.upperType?.toLowerCase() === CASH_TYPE ||
-      p.instrumentType?.toLowerCase() === "cash" ||
-      p.type?.toLowerCase() === CASH_TYPE ||
-      (/^RUB$|^USD$|^EUR$|^CNY$/i.test(p.ticker ?? "") && (p.quantity ?? 0) > 0 && !p.currentPrice);
+    // Актуальный контракт: денежная позиция = type "moneyLimit" / upperType "CURRENCY".
+    const isCash = p.type === "moneyLimit" || p.upperType === "CURRENCY";
 
-    const accKey = `${p.agreementId ?? ""}|${p.account ?? ""}|${p.currency}`;
+    const accKey = `${p.account ?? ""}|${p.currency ?? "RUB"}`;
     if (!accounts.has(accKey)) {
       accounts.set(accKey, {
-        id: maskAccount(p.agreementId || p.account || ""),
+        id: maskAccount(p.account || ""),
         type: inferAccountType(p),
         currency: p.currency ?? "RUB",
         cash: 0,
@@ -43,14 +36,11 @@ export function normalizePortfolio(raw: BcsPortfolioResponse): UnifiedPortfolio 
     const acc = accounts.get(accKey)!;
 
     if (isCash) {
-      // moneyLimit: quantity — это сумма в валюте цены; currentPrice для денег может не быть.
+      // moneyLimit: quantity — сумма в валюте цены; currentPrice для денег может отсутствовать.
       acc.cash += (p.quantity ?? 0) * (p.currentPrice || 1);
       acc.lockedCash += p.locked ?? 0;
       continue;
     }
-
-    // Совместимость со старым (PDF) и новым (swagger) контрактами:
-    const marketValueRub = p.currentValueRub ?? p.currentUserValueRub ?? null;
 
     positions.push({
       instrumentId: toInstrumentId(p),
@@ -61,7 +51,7 @@ export function normalizePortfolio(raw: BcsPortfolioResponse): UnifiedPortfolio 
       price: p.currentPrice ?? 0,
       currency: p.currency ?? "RUB",
       marketValue: p.currentValue ?? 0,
-      marketValueRub,
+      marketValueRub: p.currentValueRub ?? null,
       unrealizedPL: p.unrealizedPL ?? null,
       unrealizedPercentPL: p.unrealizedPercentPL ?? null,
       dailyPL: p.dailyPL ?? null,
@@ -82,7 +72,8 @@ export function normalizePortfolio(raw: BcsPortfolioResponse): UnifiedPortfolio 
 }
 
 function inferAccountType(p: BcsPosition): UnifiedAccount["type"] {
-  const s = `${p.subAccountId ?? ""} ${p.account ?? ""} ${p.type ?? ""}`.toLowerCase();
+  // subAccountId/agreementId deprecated у БКС — ориентируемся на номер торгового счёта.
+  const s = `${p.account ?? ""} ${p.type ?? ""}`.toLowerCase();
   if (s.includes("iis")) return "iis";
   if (s.includes("margin")) return "margin";
   return "broker";

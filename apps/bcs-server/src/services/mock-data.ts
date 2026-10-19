@@ -1,23 +1,23 @@
 /**
- * DEMO-режим (KIS_MOCK_BCS=1): фиктивный портфель в формате BCS API.
- * Поля = BcsPosition (BCS-SPEC §3.1), чтобы normalizePortfolio работал как в проде.
- * Любой непустой refresh-токен считается валидным. НЕ включать на публичном сервере!
+ * DEMO-режим (KIS_MOCK_BCS=1): фиктивный портфель в формате АКТУАЛЬНОГО контракта БКС
+ * (BCS-SPEC §3.2, llms-full.txt от 19.10.2026): голый массив Portfolio[],
+ * type ∈ moneyLimit|depoLimit|..., upperType ∈ CURRENCY|RUSSIA|FOREIGN|OTC,
+ * currentValueRub/Usd/Eur. Любой непустой refresh-токен считается валидным.
+ * НЕ включать на публичном сервере!
  */
 import type { BcsPosition, BcsPortfolioResponse } from "../types/bcs.js";
 
 function pos(t: Partial<BcsPosition> & Pick<BcsPosition, "ticker" | "displayName">): BcsPosition {
   return {
-    type: "equity",
-    subAccountId: "sub-001",
-    agreementId: "12345678",
-    account: "12345678",
+    type: "depoLimit",
+    account: "74567***1234",
     exchange: "MOEX",
     baseAssetTicker: t.ticker,
     currency: "RUB",
-    expireDate: null,
-    upperType: "security",
+    expireDate: undefined,
+    upperType: "RUSSIA",
     instrumentType: "TCS",
-    term: "",
+    term: "T1",
     quantity: 0,
     locked: 0,
     balancePrice: 0,
@@ -27,9 +27,9 @@ function pos(t: Partial<BcsPosition> & Pick<BcsPosition, "ticker" | "displayName
     balanceValueUsd: 0,
     balanceValueEur: 0,
     currentValue: 0,
-    currentUserValueRub: 0,
-    currentUserValueUsd: 0,
-    currentUserValueEur: 0,
+    currentValueRub: 0,
+    currentValueUsd: 0,
+    currentValueEur: 0,
     unrealizedPL: 0,
     unrealizedPercentPL: 0,
     dailyPL: 0,
@@ -38,7 +38,7 @@ function pos(t: Partial<BcsPosition> & Pick<BcsPosition, "ticker" | "displayName
     scale: 2,
     minimumStep: 0.01,
     board: "TQBR",
-    priceUnit: 1,
+    priceUnit: "RUB",
     faceValue: 0,
     accruedIncome: 0,
     isBlockedTradeAccount: false,
@@ -47,7 +47,7 @@ function pos(t: Partial<BcsPosition> & Pick<BcsPosition, "ticker" | "displayName
     ratioQuantity: 1,
     logoLink: "",
     ...t,
-  } as BcsPosition;
+  };
 }
 
 function stock(
@@ -72,7 +72,7 @@ function stock(
     balanceValue,
     balanceValueRub: balanceValue,
     currentValue,
-    currentUserValueRub: currentValue,
+    currentValueRub: currentValue,
     unrealizedPL,
     unrealizedPercentPL: +((unrealizedPL / balanceValue) * 100).toFixed(2),
     dailyPL: +((currentPrice - prev) * quantity).toFixed(2),
@@ -80,23 +80,23 @@ function stock(
   });
 }
 
-function cash(quantity: number, agreementId: string, accountLabel: string): BcsPosition {
+function cash(quantity: number, account: string): BcsPosition {
   return pos({
     ticker: "RUB",
     displayName: "Денежные средства",
-    type: "money",
-    upperType: "money",
-    instrumentType: "CASH",
+    type: "moneyLimit",
+    upperType: "CURRENCY",
+    instrumentType: "CURRENCY",
+    account,
     quantity,
     currentPrice: 1,
     balancePrice: 1,
     currentValue: quantity,
-    currentUserValueRub: quantity,
+    currentValueRub: quantity,
     balanceValue: quantity,
     balanceValueRub: quantity,
-    agreementId,
-    account: accountLabel,
-    exchange: "CCP",
+    exchange: "MOEX",
+    board: "CCP",
   });
 }
 
@@ -112,10 +112,10 @@ export function mockBcsPortfolio(): BcsPortfolioResponse {
     stock("SOLG", "Соллерс", 11, 990.0, 1042.0),
     stock("IRAO", "Интер РАО", 130, 14.1, 15.2),
     stock("LQDT", "Фонд Ликвидность", 140, 110.1, 112.3),
-    cash(184_320.55, "12345678", "Б4567***1234"),
-    cash(42_100.0, "IIS-7788", "ИИС 7788"),
+    cash(184_320.55, "74567***1234"),
+    cash(42_100.0, "IIS-7788"),
   ];
-  const total = positions.reduce((s, p) => s + (p.currentUserValueRub ?? 0), 0);
-  for (const p of positions) p.portfolioShare = +(((p.currentUserValueRub ?? 0) / total) * 100).toFixed(2);
+  const total = positions.reduce((s, p) => s + (p.currentValueRub ?? 0), 0);
+  for (const p of positions) p.portfolioShare = +(((p.currentValueRub ?? 0) / total) * 100).toFixed(2);
   return { positions };
 }

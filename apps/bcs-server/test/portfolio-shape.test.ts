@@ -1,9 +1,10 @@
 /**
- * Регрессия на изменение контракта BCS API (swagger trade-api.bcs.ru):
- * ответ портфеля — голый JSON-массив, а не { positions: [] } из старого PDF.
+ * Регрессия на актуальный контракт BCS API (BCS-SPEC §3.2, llms-full.txt 19.10.2026):
+ * ответ портфеля — голый JSON-массив Portfolio[]. Старый формат { positions: [] }
+ * БОЛЬШЕ НЕ поддерживается (fallback удалён по решению от 19.10.2026).
  */
 import { describe, it, expect } from "vitest";
-import { normalizeBcsPortfolioResponse } from "../src/types/bcs.js";
+import { parseBcsPortfolio } from "../src/types/bcs.js";
 import { normalizePortfolio } from "../src/services/normalize.js";
 
 const NEW_SHAPE = [
@@ -47,25 +48,25 @@ const NEW_SHAPE = [
   },
 ];
 
-describe("normalizeBcsPortfolioResponse", () => {
-  it("принимает новый формат (голый массив)", () => {
-    const r = normalizeBcsPortfolioResponse(NEW_SHAPE);
+describe("parseBcsPortfolio (только новый контракт)", () => {
+  it("принимает голый массив", () => {
+    const r = parseBcsPortfolio(NEW_SHAPE);
     expect(r.positions).toHaveLength(2);
   });
 
-  it("принимает старый формат ({positions:[]})", () => {
-    const r = normalizeBcsPortfolioResponse({ positions: NEW_SHAPE });
-    expect(r.positions).toHaveLength(2);
+  it("отвергает старый формат-обёртку {positions:[]}", () => {
+    expect(() => parseBcsPortfolio({ positions: NEW_SHAPE })).toThrow(/ожидался JSON-массив/);
   });
 
-  it("бросает ошибку на мусор", () => {
-    expect(() => normalizeBcsPortfolioResponse({ foo: 1 })).toThrow(/Неожиданная структура/);
+  it("отвергает мусор", () => {
+    expect(() => parseBcsPortfolio({ foo: 1 })).toThrow(/Неожиданная структура/);
+    expect(() => parseBcsPortfolio(null)).toThrow(/Неожиданная структура/);
   });
 });
 
-describe("normalizePortfolio (новый swagger-формат)", () => {
+describe("normalizePortfolio (актуальный swagger-формат)", () => {
   it("moneyLimit уходит в cash, бумаги — в positions; currentValueRub читается", () => {
-    const u = normalizePortfolio(normalizeBcsPortfolioResponse(NEW_SHAPE));
+    const u = normalizePortfolio(parseBcsPortfolio(NEW_SHAPE));
     expect(u.accounts[0].cash).toBeCloseTo(184320.55, 2);
     expect(u.positions).toHaveLength(1);
     expect(u.positions[0].instrumentId).toBe("MOEX:LKOH");

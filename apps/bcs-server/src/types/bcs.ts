@@ -1,42 +1,44 @@
 /**
- * Типы внешнего API БКС (be.broker.ru) — по BCS-SPEC.md.
+ * Типы внешнего API БКС (be.broker.ru) — строго по актуальному контракту
+ * BCS-SPEC.md (источник: trade-api.bcs.ru/llms-full.txt, снимок 19.10.2026).
+ * Поддержка старого PDF-контракта удалена (§10): ответ портфеля — голый массив,
+ * поля currentValueRub/Usd/Eur, без fallback-обёрток.
  */
 
-// ---------- Keycloak (BCS-SPEC §2.2) ----------
+// ---------- Keycloak (BCS-SPEC §2.3) ----------
 export interface KeycloakTokenResponse {
   access_token: string;
-  /** Keycloak отдаёт числа, хотя в документации строки */
+  /** swagger: number; фактический Keycloak может отдавать строку — парсим оба */
   expires_in: number | string;
   refresh_expires_in: number | string;
   refresh_token: string;
   token_type: string;
+  "not-before-policy"?: string;
   session_state?: string;
   scope?: string;
 }
 
-// ---------- GET /trade-api-bff-portfolio/api/v1/portfolio ----------
-/**
- * ВАЖНО (актуальный swagger с trade-api.bcs.ru/http/authorization):
- * БКС изменил контракт — ответ теперь **голый JSON-массив** позиций (без обёртки
- * `{ positions: [...] }`, как в старом PDF/BCS-SPEC §3.2). Плюс переименованы поля:
- *   currentUserValueRub → currentValueRub, currentUserValueUsd → currentValueUsd,
- *   currentUserValueEur → currentValueEur. Поля subAccountId/agreementId deprecated.
- * Поэтому все поля объявлены опциональными — адаптер не должен падать на расхождениях.
- */
+// ---------- GET /trade-api-bff-portfolio/api/v1/portfolio (BCS-SPEC §3.2) ----------
+export type BcsPortfolioType = "moneyLimit" | "depoLimit" | "futuresLimit" | "futuresHolding" | "otcLimit";
+export type BcsUpperType = "CURRENCY" | "RUSSIA" | "FOREIGN" | "OTC";
+export type BcsTerm = "T0" | "T1" | "T2" | "T365";
+
+/** Схема `Portfolio` из актуального swagger. */
 export interface BcsPosition {
-  type?: string; // moneyLimit | depoLimit | futuresLimit | futuresHolding | otcLimit
-  subAccountId?: string; // deprecated
-  agreementId?: string; // deprecated
+  type?: BcsPortfolioType;
+  /** deprecated у БКС — не использовать в бизнес-логике */
+  subAccountId?: string;
+  /** deprecated у БКС — не использовать в бизнес-логике */
+  agreementId?: string;
   account?: string;
   exchange?: string;
   ticker?: string;
   displayName?: string;
   baseAssetTicker?: string;
   currency?: string;
-  expireDate?: string | null;
-  upperType?: string; // CURRENCY | RUSSIA | FOREIGN | OTC
+  upperType?: BcsUpperType;
   instrumentType?: string;
-  term?: string; // T0 | T1 | T2 | T365
+  term?: BcsTerm;
   quantity?: number;
   locked?: number;
   balancePrice?: number;
@@ -46,12 +48,9 @@ export interface BcsPosition {
   balanceValueUsd?: number;
   balanceValueEur?: number;
   currentValue?: number;
-  currentValueRub?: number; // новый контракт
+  currentValueRub?: number;
   currentValueUsd?: number;
   currentValueEur?: number;
-  currentUserValueRub?: number; // старый контракт (PDF) — поддержка обоих форматов
-  currentUserValueUsd?: number;
-  currentUserValueEur?: number;
   unrealizedPL?: number;
   unrealizedPercentPL?: number;
   dailyPL?: number;
@@ -60,31 +59,33 @@ export interface BcsPosition {
   scale?: number;
   minimumStep?: number;
   board?: string;
-  priceUnit?: string | number;
+  priceUnit?: string;
   faceValue?: number;
   accruedIncome?: number;
+  logoLink?: string;
+  isBlocked?: boolean;
   isBlockedTradeAccount?: boolean;
   lockedForFutures?: number;
-  isBlocked?: boolean;
   ratioQuantity?: number;
-  logoLink?: string;
+  expireDate?: string;
 }
 
-/**
- * Ответ портфеля: новый контракт = массив позиций; старый (PDF) = { positions: [] }.
- * Нормализуется через normalizeBcsPortfolioResponse().
- */
-export type BcsPortfolioRaw = BcsPosition[] | { positions?: BcsPosition[] };
+/** Корень ответа портфеля по актуальному контракту — голый JSON-массив. */
+export type BcsPortfolioRaw = BcsPosition[];
 
+/** Внутренняя обёртка для normalizePortfolio (наш convenience-тип, не формат БКС). */
 export interface BcsPortfolioResponse {
   positions: BcsPosition[];
 }
 
-/** Приведение любого из двух известных форматов ответа к { positions: [] }. */
-export function normalizeBcsPortfolioResponse(json: unknown): BcsPortfolioResponse {
-  if (Array.isArray(json)) return { positions: json as BcsPosition[] };
-  if (json && typeof json === "object" && Array.isArray((json as BcsPortfolioResponse).positions)) {
-    return json as BcsPortfolioResponse;
+/**
+ * Валидация ответа портфеля строго по новому контракту (BCS-SPEC §3.2):
+ * допускается только голый массив объектов Portfolio[]. Fallback'ов на старый
+ * формат `{ positions: [] }` нет — поддержка удалена по решению от 19.10.2026.
+ */
+export function parseBcsPortfolio(json: unknown): BcsPortfolioResponse {
+  if (!Array.isArray(json)) {
+    throw new Error("Неожиданная структура ответа BCS API: ожидался JSON-массив Portfolio[]");
   }
-  throw new Error("Неожиданная структура ответа BCS API");
+  return { positions: json as BcsPosition[] };
 }
