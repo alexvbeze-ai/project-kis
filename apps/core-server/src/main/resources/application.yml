@@ -1,0 +1,14 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: core-server
+  jackson:
+    default-property-inclusion: non_null
+
+kis:
+  brokers:
+    - code: bcs
+      base-url: ${BCS_SERVER_URL:http://localhost:8081}
+      enabled: true

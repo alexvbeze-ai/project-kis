@@ -1,0 +1,143 @@
+openapi: 3.0.3
+info:
+  title: KIS Broker-API (внутренний единый контракт брокерских адаптеров)
+  version: 1.0.0
+  description: >
+    Каждый брокерский сервер-адаптер (bcs-server, tbank-server, ...) обязан
+    реализовывать этот контракт. Ядро (core-server) обращается к адаптерам только
+    через него. Модель хранения токенов (решение MVP): refresh-токен хранится у
+    пользователя в браузере и передаётся адаптеру в заголовке
+    X-Broker-Refresh-Token на каждый запрос. Адаптер НЕ сохраняет refresh-токены;
+    из-за ротации Keycloak новый refresh-токен возвращается клиенту для
+    перезаписи (поле newRefreshToken).
+servers:
+  - url: http://localhost:8081
+paths:
+  /v1/health:
+    get:
+      summary: liveness/readiness
+      responses:
+        "200":
+          description: OK
+  /v1/broker:
+    get:
+      summary: Метаданные брокера
+      responses:
+        "200":
+          description: BrokerMeta
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BrokerMeta" }
+  /v1/portfolio:
+    get:
+      summary: Портфель в нормализованном виде
+      parameters:
+        - name: X-Broker-Refresh-Token
+          in: header
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: UnifiedPortfolio
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UnifiedPortfolio" }
+        "401":
+          description: UPSTREAM_UNAUTHORIZED - refresh-токен невалиден/истёк
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UnifiedError" }
+        "429":
+          description: UPSTREAM_RATE_LIMIT
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UnifiedError" }
+        "502":
+          description: UPSTREAM_UNAVAILABLE
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UnifiedError" }
+  /v1/auth/refresh-token:
+    post:
+      summary: Проверка/ротация refresh-токена (валидация при сохранении в клиенте)
+      parameters:
+        - name: X-Broker-Refresh-Token
+          in: header
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: RefreshCheckResult
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RefreshCheckResult" }
+        "401":
+          description: UPSTREAM_UNAUTHORIZED
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UnifiedError" }
+components:
+  schemas:
+    BrokerMeta:
+      type: object
+      properties:
+        code: { type: string, example: bcs }
+        name: { type: string, example: "Банк БКС Мир инвестиций" }
+        features:
+          type: array
+          items: { type: string }
+          example: [portfolio]
+    RefreshCheckResult:
+      type: object
+      description: >
+        ВНИМАНИЕ: из-за ротации Keycloak новый refresh-токен возвращается
+        клиенту для перезаписи в браузерном хранилище.
+      properties:
+        valid: { type: boolean }
+        newRefreshToken: { type: string, nullable: true }
+        expiresIn: { type: integer, description: сек до истечения access-токена }
+    UnifiedPortfolio:
+      type: object
+      required: [broker, asOf, accounts, positions]
+      properties:
+        broker: { type: string }
+        asOf: { type: string, format: date-time }
+        accounts:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string, description: маскированный номер счёта }
+              type: { type: string, enum: [broker, iis, margin] }
+              currency: { type: string }
+              cash: { type: number }
+              lockedCash: { type: number }
+        positions:
+          type: array
+          items:
+            type: object
+            properties:
+              instrumentId: { type: string, example: "MOEX:SBER" }
+              ticker: { type: string }
+              displayName: { type: string }
+              quantity: { type: number }
+              avgPrice: { type: number, nullable: true }
+              price: { type: number }
+              currency: { type: string }
+              marketValue: { type: number }
+              marketValueRub: { type: number, nullable: true }
+              unrealizedPL: { type: number, nullable: true }
+              unrealizedPercentPL: { type: number, nullable: true }
+              dailyPL: { type: number, nullable: true }
+              dailyPercentPL: { type: number, nullable: true }
+              portfolioShare: { type: number, nullable: true }
+              logoLink: { type: string, nullable: true }
+    UnifiedError:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum: [UPSTREAM_UNAUTHORIZED, UPSTREAM_RATE_LIMIT, UPSTREAM_UNAVAILABLE, INTERNAL]
+        message: { type: string }
+        details: { type: object, nullable: true }
