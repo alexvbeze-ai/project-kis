@@ -116,6 +116,25 @@ describe("агрегация дублей позиций (BCS-SPEC §3.4)", () =
     expect(p.board ?? "TQBR").toBe("TQBR");
   });
 
+  it("удаляет точные дубликаты строк ответа БКС (OZON 60 шт. вместо 15)", () => {
+    // Прод-кейс: BFF портфеля отдаёт полностью идентичный объект позиции ×4 подряд.
+    const u = normalizePortfolio([base, { ...base }, { ...base }, { ...base }]);
+    expect(u.positions).toHaveLength(1);
+    const p = u.positions[0];
+    expect(p.quantity).toBe(10); // не 40
+    expect(p.marketValueRub).toBe(2500); // не 10000
+    expect(p.unrealizedPL).toBe(p.unrealizedPL); // без ×4 — значение из единственной строки
+  });
+
+  it("сохраняет реальное дробление позиции по term/locked (не путает с дублями)", () => {
+    const u = normalizePortfolio([
+      base,
+      { ...base, term: "T1", quantity: 5, currentValue: 1250, currentValueRub: 1250, locked: 5 },
+    ]);
+    expect(u.positions).toHaveLength(1);
+    expect(u.positions[0].quantity).toBe(15); // 10 + 5 — разные сегменты суммируются
+  });
+
   it("классифицирует инструменты по instrumentType и fallback по board", () => {
     const u = normalizePortfolio([
         { ...base, ticker: "BOND1", instrumentType: "BONDS" },

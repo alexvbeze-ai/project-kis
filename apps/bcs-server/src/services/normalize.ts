@@ -90,13 +90,35 @@ function repScore(p: BcsPosition): number {
   return primary * 1e12 + num(p.currentValueRub ?? p.currentValue);
 }
 
+/**
+ * Дедупликация идентичных строк ответа БКС.
+ * Прод-наблюдение (OZON ×4): сервис может возвращать ОДНУ И ТУ ЖЕ запись позиции
+ * несколько раз подряд (полностью идентичный объект, даже `locked`). Суммирование
+ * таких копий завышает количество и стоимость в N раз. Поэтому перед агрегацией
+ * удаляем точные дубликаты (по канонизированному JSON всей записи).
+ * Строки, отличающиеся хотя бы одним полем (разные term/board/счета), сохраняются
+ * и суммируются как разные сегменты одной позиции.
+ */
+function dropExactDuplicates(rows: BcsPosition[]): BcsPosition[] {
+  const seen = new Set<string>();
+  const out: BcsPosition[] = [];
+  for (const p of rows) {
+    const sig = JSON.stringify(Object.entries(p).sort(([x], [y]) => (x < y ? -1 : 1)));
+    if (seen.has(sig)) continue;
+    seen.add(sig);
+    out.push(p);
+  }
+  return out;
+}
+
 /** Агрегация сырых строк портфеля по инструменту в рамках счёта (BCS-SPEC §3.4). */
 function aggregateByInstrument(rows: BcsPosition[]): Agg[] {
   const map = new Map<string, Agg>();
-  // Сначала отбрасываем строки дублирующих классов торгов (остатки входят в основной класс).
-  // Фильтр построчный: зеркальные board-строки удаляются всегда — их остатки уже
-  // включены в основную запись TQBR/TQNB (BCS-SPEC §3.4 п.5, прод OZON ×4).
-  const deduped = rows.filter((p) => !(p.board && DUPLICATE_BOARDS.has(p.board.toUpperCase())));
+  // 1) Точные дубликаты строк ответа (прод-кейс OZON ×4) — удалить до суммирования.
+  // 2) Строки зеркальных классов торгов (остатки входят в основной класс TQBR/TQNB).
+  const deduped = dropExactDuplicates(rows).filter(
+    (p) => !(p.board && DUPLICATE_BOARDS.has(p.board.toUpperCase())),
+  );
   for (const p of deduped) {
     const key = [p.account ?? "", (p.exchange ?? "MOEX").toUpperCase(), p.ticker ?? "", p.currency ?? "RUB"].join("|");
     let a = map.get(key);
