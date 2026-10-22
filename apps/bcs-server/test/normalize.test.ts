@@ -116,6 +116,23 @@ describe("агрегация дублей позиций (BCS-SPEC §3.4)", () =
     expect(p.board ?? "TQBR").toBe("TQBR");
   });
 
+  it("удаляет копии позиции, отличающиеся только сервисными полями (OZON ×4)", () => {
+    // Прод-кейс: BFF портфеля отдаёт одну и ту же запись несколько раз, но
+    // объекты НЕ идентичны — отличаются changePercentage/dailyPL/logoLink.
+    // Точная дедупликация по JSON такие копии не ловила → сумма ×4.
+    const copy = (i: number): BcsPosition => ({
+      ...base,
+      changePercentage: 1.1 + i * 0.2,
+      dailyPL: i === 0 ? undefined : 10 * i,
+      logoLink: i > 1 ? "https://bcs.ru/logo.png" : base.logoLink,
+    });
+    const u = normalizePortfolio([copy(0), copy(1), copy(2), copy(3)]);
+    expect(u.positions).toHaveLength(1);
+    const p = u.positions[0];
+    expect(p.quantity).toBe(10); // не 40
+    expect(p.marketValueRub).toBe(2500); // не 10000
+  });
+
   it("удаляет точные дубликаты строк ответа БКС (OZON 60 шт. вместо 15)", () => {
     // Прод-кейс: BFF портфеля отдаёт полностью идентичный объект позиции ×4 подряд.
     const u = normalizePortfolio([base, { ...base }, { ...base }, { ...base }]);
@@ -129,10 +146,14 @@ describe("агрегация дублей позиций (BCS-SPEC §3.4)", () =
   it("сохраняет реальное дробление позиции по term/locked (не путает с дублями)", () => {
     const u = normalizePortfolio([
       base,
-      { ...base, term: "T1", quantity: 5, currentValue: 1250, currentValueRub: 1250, locked: 5 },
+      // другой срок расчётов — это отдельный сегмент позиции, суммируется
+      { ...base, term: "T2", quantity: 5, currentValue: 1250, currentValueRub: 1250, locked: 5 },
+      // тот же сегмент (term T1), но часть бумаг занята заявками (locked) —
+      // копия записи, учитывается один раз
+      { ...base, quantity: 5, currentValue: 1250, currentValueRub: 1250, locked: 5 },
     ]);
     expect(u.positions).toHaveLength(1);
-    expect(u.positions[0].quantity).toBe(15); // 10 + 5 — разные сегменты суммируются
+    expect(u.positions[0].quantity).toBe(15); // 10 (T1) + 5 (T2), не 20
   });
 
   it("классифицирует инструменты по instrumentType и fallback по board", () => {

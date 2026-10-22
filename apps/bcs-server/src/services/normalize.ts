@@ -91,21 +91,36 @@ function repScore(p: BcsPosition): number {
 }
 
 /**
- * Дедупликация идентичных строк ответа БКС.
- * Прод-наблюдение (OZON ×4): сервис может возвращать ОДНУ И ТУ ЖЕ запись позиции
- * несколько раз подряд (полностью идентичный объект, даже `locked`). Суммирование
- * таких копий завышает количество и стоимость в N раз. Поэтому перед агрегацией
- * удаляем точные дубликаты (по канонизированному JSON всей записи).
- * Строки, отличающиеся хотя бы одним полем (разные term/board/счета), сохраняются
- * и суммируются как разные сегменты одной позиции.
+ * Ключ сегмента позиции внутри одного инструмента.
+ * Прод-наблюдение (OZON ×4): БКС возвращает одну и ту же позицию несколькими
+ * строками, которые НЕ полностью идентичны — отличаются «сервисными» полями
+ * (changePercentage/dailyPL/logoLink/time…) или разбивкой quantity/locked
+ * (часть бумаг занята заявками). Торговые атрибуты при этом совпадают:
+ * счёт, биржа, тикер, валюта, класс торгов (board), срок расчётов (term) и
+ * тип позиции (type). Строки с одинаковым ключом — копии одной записи;
+ * учитываем только первую, а количества берём из максимального значения
+ * (см. aggregateByInstrument), поэтому удвоение остатков безопасно.
  */
-function dropExactDuplicates(rows: BcsPosition[]): BcsPosition[] {
+function segmentKey(p: BcsPosition): string {
+  return [
+    p.account ?? "",
+    (p.exchange ?? "MOEX").toUpperCase(),
+    p.ticker ?? "",
+    p.currency ?? "RUB",
+    (p.board ?? "").toUpperCase(),
+    p.term ?? "",
+    p.type ?? "",
+  ].join("|");
+}
+
+/** Удаление копий одной и той же позиции (см. segmentKey / BCS-SPEC §3.4). */
+function dropDuplicateSegments(rows: BcsPosition[]): BcsPosition[] {
   const seen = new Set<string>();
   const out: BcsPosition[] = [];
   for (const p of rows) {
-    const sig = JSON.stringify(Object.entries(p).sort(([x], [y]) => (x < y ? -1 : 1)));
-    if (seen.has(sig)) continue;
-    seen.add(sig);
+    const k = segmentKey(p);
+    if (seen.has(k)) continue;
+    seen.add(k);
     out.push(p);
   }
   return out;
@@ -114,9 +129,10 @@ function dropExactDuplicates(rows: BcsPosition[]): BcsPosition[] {
 /** Агрегация сырых строк портфеля по инструменту в рамках счёта (BCS-SPEC §3.4). */
 function aggregateByInstrument(rows: BcsPosition[]): Agg[] {
   const map = new Map<string, Agg>();
-  // 1) Точные дубликаты строк ответа (прод-кейс OZON ×4) — удалить до суммирования.
+  // 1) Копии одной и той же позиции (одинаковые торговые атрибуты, разные
+  //    сервисные поля — прод-кейс OZON ×4): удалить до суммирования.
   // 2) Строки зеркальных классов торгов (остатки входят в основной класс TQBR/TQNB).
-  const deduped = dropExactDuplicates(rows).filter(
+  const deduped = dropDuplicateSegments(rows).filter(
     (p) => !(p.board && DUPLICATE_BOARDS.has(p.board.toUpperCase())),
   );
   for (const p of deduped) {

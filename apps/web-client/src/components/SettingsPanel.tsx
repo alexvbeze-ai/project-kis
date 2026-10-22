@@ -51,10 +51,11 @@ export function SettingsPanel({
   };
 
   return (
-    <>
-      {/* клик вне панели закрывает её */}
-      <div className="fixed inset-0 z-40" onClick={onClose} aria-hidden />
-      <div className="absolute right-0 top-full z-50 mt-2 w-72 rounded-xl border border-slate-200 bg-white p-3 shadow-xl shadow-black/10 dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/40">
+    <div className="fixed inset-0 z-[100]">
+      {/* затемнение + клик вне панели закрывает её */}
+      <div className="absolute inset-0 bg-slate-950/30 backdrop-blur-[1px] dark:bg-black/50" onClick={onClose} aria-hidden />
+      {/* панель прижата к правому верхнему углу окна — там же, где кнопка шестерёнки */}
+      <div className="absolute right-4 top-16 max-h-[calc(100vh-5rem)] w-72 overflow-y-auto rounded-xl border border-slate-200 bg-white p-3 shadow-xl shadow-black/10 dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/40">
         {/* ---- Тема ---- */}
         <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
           Тема
@@ -148,6 +149,6 @@ export function SettingsPanel({
           )}
         </div>
       </div>
-    </>
+    </div>
   );
 }
