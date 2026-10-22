@@ -36,18 +36,22 @@ export default function App() {
     applyTheme(loadTheme());
   }, []);
 
-  /** Загрузить портфель; при ротации токена — перезаписать его в браузере. */
-  const load = useCallback(async (t: string) => {
-    if (!t) return;
+  /**
+   * Загрузка портфеля. Актуальный refresh-токен всегда читается из хранилища,
+   * а не из state — это позволяет useEffect автообновления НЕ зависеть от
+   * токена и не пересоздаваться на каждую ротацию Keycloak.
+   */
+  const load = useCallback(async () => {
+    const activeToken = loadToken();
+    if (!activeToken) return;
     setLoading(true);
     try {
       const { portfolio: p, rotatedRefreshToken } = await fetchPortfolio({
         broker: BROKER,
-        refreshToken: t,
+        refreshToken: activeToken,
       });
       if (rotatedRefreshToken) {
         saveToken(rotatedRefreshToken);
-        setToken(rotatedRefreshToken);
       }
       setPortfolio(p);
       setError(null);
@@ -66,19 +70,34 @@ export default function App() {
     }
   }, []);
 
-  // первая загрузка при входе/перезагрузке страницы + автообновление из настроек
-  // (0 = «не обновлять» — портфель это экран для раздумий, а не онлайн-котировки)
+  // Первая загрузка при входе на экран портфеля + автообновление из настроек
+  // (0 = «не обновлять» — портфель это экран для раздумий, а не онлайн-котировки).
+  //
+  // ВНИМАНИЕ: в зависимостях НЕ должно быть `token` и `load`:
+  //   • load менял setToken при ротации refresh-токена → effect пересоздавался
+  //     → снова вызывал load → снова ротация… — бесконечный шторм запросов
+  //     к БКС (~5 RPS), даже когда в настройках выбрано «Не обновлять».
+  //   • Актуальный токен load() сам читает из хранилища (loadToken()).
+  // Effect живёт ровно одну сессию экрана: перезапуск только при смене
+  // screen или интервала refreshMs.
+  const sessionRef = useRef(0);
   useEffect(() => {
     if (screen !== "portfolio") return;
-    load(token);
+    const session = ++sessionRef.current;
+    let cancelled = false;
+    const run = () => {
+      if (!cancelled && session === sessionRef.current) load();
+    };
+    run();
     if (refreshMs > 0) {
-      timerRef.current = window.setInterval(() => load(token), refreshMs);
+      timerRef.current = window.setInterval(run, refreshMs);
     }
     return () => {
+      cancelled = true;
       if (timerRef.current) window.clearInterval(timerRef.current);
       timerRef.current = null;
     };
-  }, [screen, token, load, refreshMs]);
+  }, [screen, refreshMs, load]);
 
   const onConnect = async (newToken: string, newMode: StorageMode) => {
     setModeState(newMode);
@@ -86,8 +105,7 @@ export default function App() {
     saveToken(newToken);
     setToken(newToken);
     setError(null);
-    setLoading(true);
-    await load(newToken);
+    // саму загрузку выполнит effect входа на экран портфеля — ровно один запрос
     setScreen("portfolio");
   };
 
@@ -106,7 +124,7 @@ export default function App() {
     setError(null);
     setSettingsOpen(false);
     setScreen("portfolio");
-    await load(newToken);
+    await load();
   };
 
   return (
@@ -126,7 +144,7 @@ export default function App() {
             <div className="flex items-center gap-2">
               {/* Обновить — элегантная иконка ⟳ */}
               <button
-                onClick={() => load(token)}
+                onClick={() => load()}
                 disabled={loading}
                 title="Обновить портфель"
                 aria-label="Обновить портфель"
