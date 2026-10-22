@@ -104,6 +104,18 @@ describe("агрегация дублей позиций (BCS-SPEC §3.4)", () =
     expect(u.positions[0].portfolioShare).toBeCloseTo(50, 6);
   });
 
+  it("не суммирует дубли одного тикера из вторичных классов торгов (OZON 4×)", () => {
+    // БКС возвращает одну и ту же позицию в нескольких классах торгов:
+    // основной TQBR + зеркала QJS/QNM/QNN с теми же количествами и стоимостями.
+    const mirror = (board: string): BcsPosition => ({ ...base, board });
+    const u = normalizePortfolio([base, mirror("QJS"), mirror("QNM"), mirror("QNN")]);
+    expect(u.positions).toHaveLength(1);
+    const p = u.positions[0];
+    expect(p.quantity).toBe(10); // не 40
+    expect(p.marketValueRub).toBe(2500); // не 10000
+    expect(p.board ?? "TQBR").toBe("TQBR");
+  });
+
   it("классифицирует инструменты по instrumentType и fallback по board", () => {
     const u = normalizePortfolio([
         { ...base, ticker: "BOND1", instrumentType: "BONDS" },

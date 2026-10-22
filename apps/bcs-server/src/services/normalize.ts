@@ -77,10 +77,27 @@ function num(v: number | undefined | null): number {
   return typeof v === "number" && Number.isFinite(v) ? v : 0;
 }
 
+/**
+ * Классы торгов, которые НЕ учитываем при агрегации — их остатки уже входят
+ * в основной класс (TQBR для акций/фондов, TQNB для облигаций MOEX).
+ * Иначе сумма позиции вырастает кратно числу классов (§3.4).
+ */
+const DUPLICATE_BOARDS = new Set(["QJS", "QNN", "QNM", "TCMQI", "SMCM"]);
+
+/** Приоритет representative-записи: основной класс торгов → максимальная стоимость. */
+function repScore(p: BcsPosition): number {
+  const primary = p.board && !DUPLICATE_BOARDS.has(p.board.toUpperCase()) ? 1 : 0;
+  return primary * 1e12 + num(p.currentValueRub ?? p.currentValue);
+}
+
 /** Агрегация сырых строк портфеля по инструменту в рамках счёта (BCS-SPEC §3.4). */
 function aggregateByInstrument(rows: BcsPosition[]): Agg[] {
   const map = new Map<string, Agg>();
-  for (const p of rows) {
+  // Сначала отбрасываем строки дублирующих классов торгов (остатки входят в основной класс).
+  // Фильтр построчный: зеркальные board-строки удаляются всегда — их остатки уже
+  // включены в основную запись TQBR/TQNB (BCS-SPEC §3.4 п.5, прод OZON ×4).
+  const deduped = rows.filter((p) => !(p.board && DUPLICATE_BOARDS.has(p.board.toUpperCase())));
+  for (const p of deduped) {
     const key = [p.account ?? "", (p.exchange ?? "MOEX").toUpperCase(), p.ticker ?? "", p.currency ?? "RUB"].join("|");
     let a = map.get(key);
     if (!a) {
@@ -99,9 +116,7 @@ function aggregateByInstrument(rows: BcsPosition[]): Agg[] {
     a.unrealizedPL += num(p.unrealizedPL);
     a.dailyPL += num(p.dailyPL);
     a.rows += 1;
-    const curVal = num(p.currentValueRub ?? p.currentValue);
-    const repVal = num(a.rep.currentValueRub ?? a.rep.currentValue);
-    if (curVal > repVal) a.rep = p; // метаданные (цена, scale, board…) — из самой дорогой записи
+    if (repScore(p) > repScore(a.rep)) a.rep = p; // метаданные (цена, scale, board…) — из основной записи
   }
   return [...map.values()];
 }
